@@ -42,7 +42,7 @@
 
 ## 확인 방법
 ```bash
-node --test tests/                     # 자동 검사 (Node 22 이상)
+node --test tests/*.test.mjs                     # 자동 검사 (Node 22 이상)
 deno run -A scripts/local-server.mjs   # 미리보기 → http://localhost:8787/?invite=test
 ```
 - 미리보기는 내 컴퓨터 안의 가짜 DB(`.local/dev.sqlite`)를 쓰므로 실제 모임 기록에 영향이 없다. 처음 열면 **설정 → 모임 시작일**을 정해야 오늘 화면이 보인다.

@@ -35,7 +35,7 @@
 구조, 작업 규칙, 확인 방법은 [CLAUDE.md](CLAUDE.md)를 보세요.
 
 ```bash
-node --test tests/                     # 자동 검사
+node --test tests/*.test.mjs                     # 자동 검사
 deno run -A scripts/local-server.mjs   # 미리보기 → http://localhost:8787/?invite=test
 ```
 
