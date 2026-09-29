@@ -1,6 +1,6 @@
 # 개인용 앱 최초 준비 (한 번만 실행 후 이 파일은 지운다)
-# - 개인용 데이터베이스 만들기 + 표·기본 읽기표 넣기
-# - 개인용 알림 키 만들기: 비밀키는 화면에 찍지 않고 바로 Cloudflare 비밀값으로 저장
+# 개인용 알림 키 만들기: 비밀키는 화면에 찍지 않고 바로 Cloudflare 비밀값으로 저장, 공개키만 기록에 남김
+# (데이터베이스는 이전 실행에서 이미 만들었다)
 name: 개인용 앱 최초 준비
 
 on:
@@ -20,21 +20,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: 개인용 데이터베이스 만들기
-        run: |
-          npx wrangler d1 create malsseum-personal --location apac | tee d1.txt
-          DB_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' d1.txt | head -1)
-          test -n "$DB_ID"
-          sed -i "s/PERSONAL_DB_ID/$DB_ID/" wrangler.toml
-          echo "PERSONAL_DB_ID=$DB_ID" >> "$GITHUB_STEP_SUMMARY"
-      - name: 표 만들기와 기본 읽기표 넣기
-        run: |
-          npx wrangler d1 execute malsseum-personal --env personal --remote --file schema-personal.sql
-          npx wrangler d1 execute malsseum-personal --env personal --remote --file data/seed.sql
       - name: 개인용 알림 키 만들기
         run: |
+          sed -i "s/PERSONAL_DB_ID/7fe7c2d9-2cee-4944-b236-51c74dfc9507/" wrangler.toml
           node scripts/gen-vapid.mjs > keys.txt
-          PUB=$(sed -n 's/^VAPID_PUBLIC_KEY = //p' keys.txt)
           sed -n 's/^VAPID_PRIVATE_KEY = //p' keys.txt | tr -d '\n' | npx wrangler secret put VAPID_PRIVATE_KEY --env personal
+          echo "PUBLIC_KEY_FOR_TOML: $(sed -n 's/^VAPID_PUBLIC_KEY = //p' keys.txt)"
           rm keys.txt
-          echo "PERSONAL_VAPID_PUBLIC_KEY=$PUB" >> "$GITHUB_STEP_SUMMARY"
