@@ -39,7 +39,7 @@ directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 # 개인용은 아이콘·manifest 도 Worker 가 public/personal/ 의 것으로 바꿔 보여 준다
-run_worker_first = ["/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest"]
+run_worker_first = ["/", "/index.html", "/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest"]
 
 # 데이터베이스 (schema-personal.sql)
 [[env.personal.d1_databases]]

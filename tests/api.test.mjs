@@ -7,7 +7,14 @@ import { createLocalDB } from "../scripts/d1-local.mjs";
 function makeApp(mode) {
   const env = {
     DB: createLocalDB({ mode }),
-    ASSETS: { fetch: (req) => new Response(`asset:${new URL(req.url).pathname}`) },
+    ASSETS: {
+      fetch: (req) => {
+        const path = new URL(req.url).pathname;
+        return path === "/" || path === "/index.html"
+          ? new Response('<title>말씀 읽고 새 인생</title><meta name="apple-mobile-web-app-title" content="말씀 새 인생">', { headers: { "Content-Type": "text/html" } })
+          : new Response(`asset:${path}`);
+      },
+    },
     INVITE_CODE: "test",
     ...(mode === "personal" ? { MODE: "personal" } : {}),
   };
@@ -47,6 +54,8 @@ test("모임 모드: 입장·공통 시작일·함께 보기·범위 수정", as
   // 모임 모드는 개인용 파일을 보여 주지 않는다
   assert.equal((await call("/personal/icons/icon-192.png")).status, 404);
   assert.equal((await call("/icons/icon-192.png")).data, "asset:/icons/icon-192.png");
+  // 모임 모드 앱 이름은 그대로
+  assert.doesNotMatch((await call("/")).data, /개인용/);
 });
 
 test("개인 모드: 코드 없이 시작, 사람마다 시작일·읽기표·기록이 따로", async () => {
@@ -92,4 +101,8 @@ test("개인 모드: 코드 없이 시작, 사람마다 시작일·읽기표·�
   // 개인 모드 아이콘은 개인용 파일로 바뀐다
   assert.equal((await call("/icons/icon-192.png")).data, "asset:/personal/icons/icon-192.png");
   assert.equal((await call("/manifest.webmanifest")).data, "asset:/personal/manifest.webmanifest");
+  // 개인 모드 앱 이름: 탭 제목·아이폰 홈 화면 이름에 "개인용"
+  const html = (await call("/")).data;
+  assert.match(html, /<title>말씀 읽고 새 인생 \(개인용\)<\/title>/);
+  assert.match(html, /content="말씀 새 인생 개인용"/);
 });

@@ -23,6 +23,10 @@ const S = {
 // 개인 모드(혼자 읽기)인지. 모임 모드에서만 "모두에게 적용" 같은 문구를 보여 준다.
 const personal = () => S.mode === "personal";
 const forAll = (text) => (personal() ? "" : text);
+// 앱 이름 (개인 모드는 뒤에 "개인용")
+const appName = () => (personal() ? "말씀 읽고 새 인생 (개인용)" : "말씀 읽고 새 인생");
+const homeName = () => (personal() ? "말씀 새 인생 개인용" : "말씀 새 인생");
+const brandHtml = () => `<h1 class="brand">말씀 읽고<br>새 인생</h1>${personal() ? `<p class="center mt"><span class="chip gold">개인용</span></p>` : ""}`;
 
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 function niceDate(iso, withYear = false) {
@@ -240,7 +244,7 @@ function renderJoinPersonal() {
       </form>`;
   $("#app").innerHTML = `
     <section class="join">
-      <h1 class="brand">말씀 읽고<br>새 인생</h1>
+      ${brandHtml()}
       <p class="tagline">397일, 성경 전체를 읽어요</p>
       ${iosBrowser ? `<div class="notice"><p>아이폰은 먼저 <b>홈 화면에 추가</b>한 뒤, 홈 화면의 앱 아이콘으로 들어와서 시작해야 알림을 받을 수 있어요.</p>
         <button class="btn secondary" data-action="install-guide">방법 보기</button></div>` : ""}
@@ -356,7 +360,7 @@ function renderToday() {
     </div>` : "";
 
   $("#app").innerHTML = `
-    <header class="top"><h1>말씀 읽고 새 인생</h1><span class="date">${niceDate(S.today)}</span></header>
+    <header class="top"><h1>${appName()}</h1><span class="date">${niceDate(S.today)}</span></header>
     ${pushNotice()}
     ${main}
     ${missedHtml}
@@ -606,7 +610,7 @@ function openInstallGuide() {
       <li><b>사파리(Safari)</b>로 이 주소를 엽니다.</li>
       <li>아래쪽 공유 버튼 ${share} 을 누릅니다.</li>
       <li><b>홈 화면에 추가</b>를 누르고, 오른쪽 위 <b>추가</b>를 누릅니다.</li>
-      <li>홈 화면에 생긴 <b>말씀 새 인생</b> 아이콘으로 들어가 입장한 뒤 <b>알림 켜기</b>를 누릅니다.</li>
+      <li>홈 화면에 생긴 <b>${homeName()}</b> 아이콘으로 들어가 입장한 뒤 <b>알림 켜기</b>를 누릅니다.</li>
     </ol>
     <h2 class="section">갤럭시</h2>
     <ol class="steps">
@@ -619,7 +623,7 @@ function openInstallGuide() {
 // ── 렌더링 ────────────────────────────────────────────
 function render() {
   if (!S.token) { renderJoin(); return; }
-  if (!S.loaded) { $("#app").innerHTML = `<div class="splash"><h1 class="brand">말씀 읽고<br>새 인생</h1></div>`; return; }
+  if (!S.loaded) { $("#app").innerHTML = `<div class="splash">${brandHtml()}</div>`; return; }
   if (personal() && S.tab === "together") S.tab = "today";
   ({ today: renderToday, together: renderTogether, plan: renderPlan, settings: renderSettings }[S.tab] || renderToday)();
 }

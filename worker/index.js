@@ -51,7 +51,21 @@ function serveAsset(request, env, url) {
   if (isPersonal(env) && (p === "/manifest.webmanifest" || p.startsWith("/icons/"))) {
     return env.ASSETS.fetch(new Request(new URL("/personal" + p, url), request));
   }
+  if (isPersonal(env) && (p === "/" || p === "/index.html")) return personalIndex(request, env);
   return env.ASSETS.fetch(request);
+}
+
+// 개인 모드 첫 화면: 브라우저 탭 제목과 아이폰 홈 화면 이름에 "개인용"을 붙인다
+async function personalIndex(request, env) {
+  const res = await env.ASSETS.fetch(request);
+  if (!res.ok || !(res.headers.get("Content-Type") || "").includes("text/html")) return res;
+  const html = (await res.text())
+    .replace("<title>말씀 읽고 새 인생</title>", "<title>말씀 읽고 새 인생 (개인용)</title>")
+    .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="말씀 새 인생 개인용"');
+  const headers = new Headers(res.headers);
+  headers.delete("Content-Length");
+  headers.delete("ETag");
+  return new Response(html, { status: res.status, headers });
 }
 
 // ── DB 읽기·쓰기 도우미 ─────────────────────────────────
@@ -375,7 +389,7 @@ async function handleApi(request, env, url) {
 
   if (path === "/push/test" && method === "POST") {
     const sent = await pushToMember(env, me.id, {
-      title: "말씀 읽고 새 인생", body: "알림이 잘 도착했어요! 🙌", url: "/",
+      title: isPersonal(env) ? "말씀 읽고 새 인생 (개인용)" : "말씀 읽고 새 인생", body: "알림이 잘 도착했어요! 🙌", url: "/",
     });
     if (!sent) throw new HttpError(400, "이 사람에게 등록된 알림 기기가 없어요. 먼저 알림을 켜 주세요.");
     return json({ ok: true, sent });
