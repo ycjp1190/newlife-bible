@@ -45,7 +45,7 @@ run_worker_first = ["/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest"
 [[env.personal.d1_databases]]
 binding = "DB"
 database_name = "malsseum-personal"
-database_id = "PERSONAL_DB_ID"
+database_id = "7fe7c2d9-2cee-4944-b236-51c74dfc9507"
 
 [env.personal.triggers]
 crons = ["*/5 * * * *"]
@@ -53,5 +53,5 @@ crons = ["*/5 * * * *"]
 # 비밀값 VAPID_PRIVATE_KEY 는 `wrangler secret put VAPID_PRIVATE_KEY --env personal` 로 넣는다. (초대 코드 없음)
 [env.personal.vars]
 MODE = "personal"
-VAPID_PUBLIC_KEY = "PERSONAL_VAPID_PUBLIC_KEY"
+VAPID_PUBLIC_KEY = "BNudWbT87Efvz4qX2Ddae6DKyTC-bgJr3mvBdZmCxz8026QTlYCDRcGBpeU5t403fWWQdnpcdVN8B6T0kGxtdR0"
 VAPID_SUBJECT = "https://malsseum-personal.newlife-bible.workers.dev"
