@@ -1,0 +1,27 @@
+# Cloudflare 배포 설정 — "말씀 읽고 새 인생"
+name = "malsseum-new-life"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+account_id = "6678aa6683d9c644c2db3b66c13ffcb3"
+
+# 앱 화면 파일 (public/). /api/* 요청만 Worker 코드가 먼저 처리한다.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# 데이터베이스. database_id 는 `npx wrangler d1 create malsseum` 결과로 바꿔 넣는다.
+[[d1_databases]]
+binding = "DB"
+database_name = "malsseum"
+database_id = "6d176e67-8acb-4e13-ac28-009f9a535e8d"
+
+# 5분마다 알림 대상 확인
+[triggers]
+crons = ["*/5 * * * *"]
+
+# 공개해도 되는 값. 비밀값(VAPID_PRIVATE_KEY, INVITE_CODE)은 `wrangler secret put` 으로 넣는다.
+[vars]
+VAPID_PUBLIC_KEY = "BO_3V5cXzqCybefQIvBY2rN84ujPuZ1K5GXG4OKOJ1zpCuB0DfD7u7eX4CJmxBw8H-RM1xjsMggSK3o3PqoV1tQ"
+VAPID_SUBJECT = "https://malsseum-new-life.newlife-bible.workers.dev"

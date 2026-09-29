@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.local/
+.dev.vars
+# 원본 PDF에서 뽑은 글 (저작물 보호를 위해 공개 저장소에 올리지 않음)
+data/roadmap-extracted.txt
+.DS_Store
