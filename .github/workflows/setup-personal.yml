@@ -4,7 +4,9 @@
 name: 개인용 앱 최초 준비
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [personal-mode]
+    paths: [".github/workflows/setup-personal.yml"]
 
 jobs:
   setup:
