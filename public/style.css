@@ -136,6 +136,12 @@ label.field > span { display: block; font-size: 14px; color: var(--muted); margi
   background: var(--bg); font-size: 16px; outline: none;
 }
 .input:focus { border-color: var(--accent); }
+/* 아이폰 사파리: 날짜 칸이 자체 최소 너비 때문에 카드 밖으로 넘치는 문제 방지 */
+input[type="date"].input {
+  -webkit-appearance: none; appearance: none;
+  display: block; min-width: 0; max-width: 100%; min-height: 48px; text-align: left;
+}
+input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
 textarea.input { min-height: 55vh; font-size: 14px; line-height: 1.7; font-family: ui-monospace, Menlo, monospace; }
 .hint { font-size: 13px; color: var(--muted); margin: 6px 2px 0; }
 .hint.error { color: var(--warn); }
