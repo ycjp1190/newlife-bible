@@ -1,38 +1,17 @@
-// 로컬 미리보기 서버 (Node 없이 Deno로 실행). 실제 배포는 Cloudflare(wrangler)를 사용한다.
-// 실행: deno run -A scripts/local-server.mjs   → http://localhost:8787/?invite=test
-// - Cloudflare D1 대신 내장 SQLite 파일(.local/dev.sqlite)을 쓴다.
-// - 알림 예약 실행은 http://localhost:8787/__cron?at=2026-10-01T06:30 로 흉내 낼 수 있다.
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+// 로컬 미리보기 서버 (Deno 로 실행). 실제 배포는 GitHub Actions 가 Cloudflare 에 한다.
+// 모임 모드: deno run -A scripts/local-server.mjs            → http://localhost:8787/?invite=test
+// 개인 모드: deno run -A scripts/local-server.mjs personal   → http://localhost:8788/
+// - Cloudflare D1 대신 내장 SQLite 파일(.local/*.sqlite)을 쓴다. 실제 모임 기록과 무관하다.
+// - 알림 예약 실행은 /__cron?at=2026-10-01T06:30 (한국 시각) 으로 흉내 낼 수 있다.
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createLocalDB, root } from "./d1-local.mjs";
 import worker from "../worker/index.js";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+const mode = Deno.args[0] === "personal" ? "personal" : "group";
+const port = mode === "personal" ? 8788 : 8787;
 mkdirSync(root + ".local", { recursive: true });
-const dbPath = root + ".local/dev.sqlite";
-const fresh = !existsSync(dbPath);
-const sqlite = new DatabaseSync(dbPath);
-if (fresh) {
-  sqlite.exec(readFileSync(root + "schema.sql", "utf8"));
-  sqlite.exec(readFileSync(root + "data/seed.sql", "utf8"));
-}
-
-// D1과 같은 모양의 아주 작은 흉내 객체
-class Stmt {
-  constructor(sql, params = []) { this.sql = sql; this.params = params; }
-  bind(...params) { return new Stmt(this.sql, params); }
-  async first() { return sqlite.prepare(this.sql).get(...this.params) ?? null; }
-  async all() { return { results: sqlite.prepare(this.sql).all(...this.params) }; }
-  async run() { sqlite.prepare(this.sql).run(...this.params); return { success: true }; }
-}
-const DB = {
-  prepare: (sql) => new Stmt(sql),
-  async batch(stmts) {
-    sqlite.exec("BEGIN");
-    try { for (const s of stmts) await s.run(); sqlite.exec("COMMIT"); } catch (e) { sqlite.exec("ROLLBACK"); throw e; }
-    return [];
-  },
-};
+const dbPath = root + `.local/${mode}.sqlite`;
+const DB = createLocalDB({ mode, path: dbPath, fresh: !existsSync(dbPath) });
 
 const TYPES = { html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8",
   png: "image/png", svg: "image/svg+xml", webmanifest: "application/manifest+json", json: "application/json" };
@@ -51,18 +30,21 @@ const vars = existsSync(root + ".dev.vars")
   ? Object.fromEntries(readFileSync(root + ".dev.vars", "utf8").split("\n")
     .map((l) => l.match(/^\s*([A-Z_]+)\s*=\s*"?([^"]*)"?\s*$/)).filter(Boolean).map((m) => [m[1], m[2]]))
   : {};
-const env = { DB, ASSETS, INVITE_CODE: "test", VAPID_SUBJECT: "https://localhost", ...vars };
+const env = {
+  DB, ASSETS, INVITE_CODE: "test", VAPID_SUBJECT: "https://localhost", ...vars,
+  ...(mode === "personal" ? { MODE: "personal" } : {}),
+};
 
-Deno.serve({ port: 8787 }, async (request) => {
+Deno.serve({ port }, async (request) => {
   const url = new URL(request.url);
   if (url.pathname === "/__cron") {
     const at = url.searchParams.get("at"); // 한국 시각 "YYYY-MM-DDTHH:MM"
     const now = at ? Date.parse(at + ":00+09:00") : Date.now();
     const pending = [];
-    await worker.scheduled({ scheduledTime: now }, env,{ waitUntil: (p) => pending.push(p) });
+    await worker.scheduled({ scheduledTime: now }, env, { waitUntil: (p) => pending.push(p) });
     await Promise.all(pending);
     return new Response(`cron ran at ${new Date(now).toISOString()}\n`);
   }
   return worker.fetch(request, env, { waitUntil() {} });
 });
-console.log(`로컬 서버: http://localhost:8787/?invite=${env.INVITE_CODE}`);
+console.log(`로컬 서버 (${mode === "personal" ? "개인" : "모임"} 모드): http://localhost:${port}/${mode === "personal" ? "" : "?invite=test"}`);

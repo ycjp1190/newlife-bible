@@ -1,17 +1,21 @@
 # Cloudflare 배포 설정 — "말씀 읽고 새 인생"
+# 같은 코드를 두 앱으로 배포한다.
+#   - 모임용(기본):        npx wrangler deploy                 → malsseum-new-life
+#   - 개인용(env.personal): npx wrangler deploy --env personal  → malsseum-personal
+# 두 앱은 주소·데이터베이스·알림 키가 모두 따로다.
 name = "malsseum-new-life"
 main = "worker/index.js"
 compatibility_date = "2025-09-01"
 account_id = "6678aa6683d9c644c2db3b66c13ffcb3"
 
-# 앱 화면 파일 (public/). /api/* 요청만 Worker 코드가 먼저 처리한다.
+# 앱 화면 파일 (public/). /api/* 와 /personal/* 요청은 Worker 코드가 먼저 처리한다.
 [assets]
 directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/personal/*"]
 
-# 데이터베이스. database_id 는 `npx wrangler d1 create malsseum` 결과로 바꿔 넣는다.
+# 데이터베이스 (schema.sql)
 [[d1_databases]]
 binding = "DB"
 database_name = "malsseum"
@@ -25,3 +29,29 @@ crons = ["*/5 * * * *"]
 [vars]
 VAPID_PUBLIC_KEY = "BO_3V5cXzqCybefQIvBY2rN84ujPuZ1K5GXG4OKOJ1zpCuB0DfD7u7eX4CJmxBw8H-RM1xjsMggSK3o3PqoV1tQ"
 VAPID_SUBJECT = "https://malsseum-new-life.newlife-bible.workers.dev"
+
+# ── 개인용 앱 ─────────────────────────────────────────
+[env.personal]
+name = "malsseum-personal"
+
+[env.personal.assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# 개인용은 아이콘·manifest 도 Worker 가 public/personal/ 의 것으로 바꿔 보여 준다
+run_worker_first = ["/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest"]
+
+# 데이터베이스 (schema-personal.sql)
+[[env.personal.d1_databases]]
+binding = "DB"
+database_name = "malsseum-personal"
+database_id = "PERSONAL_DB_ID"
+
+[env.personal.triggers]
+crons = ["*/5 * * * *"]
+
+# 비밀값 VAPID_PRIVATE_KEY 는 `wrangler secret put VAPID_PRIVATE_KEY --env personal` 로 넣는다. (초대 코드 없음)
+[env.personal.vars]
+MODE = "personal"
+VAPID_PUBLIC_KEY = "PERSONAL_VAPID_PUBLIC_KEY"
+VAPID_SUBJECT = "https://malsseum-personal.newlife-bible.workers.dev"

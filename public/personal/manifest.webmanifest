@@ -1,0 +1,16 @@
+{
+  "name": "말씀 읽고 새 인생",
+  "short_name": "말씀 새 인생",
+  "description": "397일 성경읽기 — 오늘 읽을 말씀을 알려주고 함께 체크하는 앱",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f2e9",
+  "theme_color": "#f7f2e9",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

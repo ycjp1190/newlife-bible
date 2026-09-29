@@ -16,8 +16,13 @@ const S = {
   token: store.get("token"),
   me: null, plan: [], startDate: null, today: kstToday(), checks: new Map(),
   vapid: null, loaded: false, tab: store.get("tab") || "today",
+  mode: store.get("mode") || "group", joinView: "new",
   members: null, showAllMissed: false, push: "unknown",
 };
+
+// 개인 모드(혼자 읽기)인지. 모임 모드에서만 "모두에게 적용" 같은 문구를 보여 준다.
+const personal = () => S.mode === "personal";
+const forAll = (text) => (personal() ? "" : text);
 
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 function niceDate(iso, withYear = false) {
@@ -75,6 +80,7 @@ const partLabel = (chapters) => {
 async function loadState() {
   const data = await api("/state");
   S.me = data.me;
+  if (data.mode) S.mode = data.mode;
   S.plan = data.plan;
   S.startDate = data.startDate;
   S.today = data.today;
@@ -183,7 +189,8 @@ const ICONS = {
 const TAB_NAMES = { today: "오늘", together: "함께", plan: "일정", settings: "설정" };
 
 function navHtml() {
-  return `<nav class="tabs" aria-label="메뉴"><div class="inner">${Object.keys(TAB_NAMES).map((t) => `
+  const tabs = Object.keys(TAB_NAMES).filter((t) => !(personal() && t === "together"));
+  return `<nav class="tabs" aria-label="메뉴"><div class="inner" style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map((t) => `
     <button data-action="tab" data-tab="${t}" ${S.tab === t ? 'aria-current="page"' : ""}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[t]}</svg>
       ${TAB_NAMES[t]}</button>`).join("")}</div></nav>`;
@@ -191,6 +198,7 @@ function navHtml() {
 
 // ── 화면: 입장 ────────────────────────────────────────
 function renderJoin() {
+  if (personal()) { renderJoinPersonal(); return; }
   const invite = new URLSearchParams(location.search).get("invite") || store.get("invite") || "";
   const iosBrowser = isIOS() && !isStandalone();
   $("#app").innerHTML = `
@@ -208,6 +216,79 @@ function renderJoin() {
         <p class="hint">전에 쓰던 이름을 그대로 적으면 기존 기록으로 이어서 사용해요.</p>
       </form>
     </section>`;
+}
+
+// 개인 모드 입장: 이름 + 시작일 / 복구 코드로 이어 쓰기
+function renderJoinPersonal() {
+  const iosBrowser = isIOS() && !isStandalone();
+  const form = S.joinView === "recover"
+    ? `<form class="card" id="recover-form">
+        <label class="field"><span>복구 코드</span>
+          <input class="input" name="code" required autocapitalize="characters" autocomplete="off" placeholder="예: K7MX-Q2PD"></label>
+        <button class="btn block" type="submit">내 기록 이어서 쓰기</button>
+        <p class="hint">처음 시작할 때 받은 8자리 코드예요. 설정 화면에서도 볼 수 있어요.</p>
+        <button class="btn ghost block mt" type="button" data-action="join-view" data-view="new">처음 시작하기로 돌아가기</button>
+      </form>`
+    : `<form class="card" id="join-personal-form">
+        <label class="field"><span>이름</span>
+          <input class="input" name="name" autocomplete="name" maxlength="20" required placeholder="예: 홍길동"></label>
+        <label class="field"><span>시작일 (DAY 1)</span>
+          <input class="input" type="date" name="start" value="${esc(kstToday())}" required></label>
+        <button class="btn block" type="submit">시작하기</button>
+        <p class="hint">하루 3장씩, 397일 동안 성경 전체를 읽어요. 시작일은 나중에 바꿀 수 있어요.</p>
+        <button class="btn ghost block mt" type="button" data-action="join-view" data-view="recover">전에 쓰던 기록이 있어요</button>
+      </form>`;
+  $("#app").innerHTML = `
+    <section class="join">
+      <h1 class="brand">말씀 읽고<br>새 인생</h1>
+      <p class="tagline">397일, 성경 전체를 읽어요</p>
+      ${iosBrowser ? `<div class="notice"><p>아이폰은 먼저 <b>홈 화면에 추가</b>한 뒤, 홈 화면의 앱 아이콘으로 들어와서 시작해야 알림을 받을 수 있어요.</p>
+        <button class="btn secondary" data-action="install-guide">방법 보기</button></div>` : ""}
+      ${form}
+    </section>`;
+}
+
+async function finishJoin(data, welcome) {
+  S.token = data.token;
+  store.set("token", data.token);
+  history.replaceState(null, "", "/");
+  await loadState();
+  await detectPush().catch(() => {});
+  render();
+  toast(welcome);
+}
+
+async function submitJoinPersonal(form) {
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const data = await api("/join", { method: "POST", body: { name: form.name.value.trim(), start_date: form.start.value } });
+    await finishJoin(data, `${data.member.name}님, 함께 시작해요!`);
+    openRecoveryInfo(true);
+  } catch (e) { toast(e.message); btn.disabled = false; }
+}
+
+async function submitRecover(form) {
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const data = await api("/recover", { method: "POST", body: { code: form.code.value } });
+    await finishJoin(data, `${data.member.name}님, 다시 오셨네요!`);
+  } catch (e) { toast(e.message); btn.disabled = false; }
+}
+
+function openRecoveryInfo(first = false) {
+  const code = S.me?.recoveryCode;
+  if (!code) return;
+  openSheet(`
+    <h3>${first ? "복구 코드를 꼭 적어 두세요" : "내 복구 코드"}</h3>
+    <p class="passage" style="text-align:center;letter-spacing:2px;font-size:28px;margin:18px 0">${esc(code)}</p>
+    <p class="muted">폰을 바꾸거나 앱을 지웠을 때, 이 코드로 지금까지의 기록을 그대로 이어 쓸 수 있어요.
+      <b>화면을 캡처하거나 종이에 적어 두세요.</b> 다른 사람에게는 알려 주지 마세요.</p>
+    <div class="btn-row">
+      <button class="btn secondary" data-action="copy-code">코드 복사</button>
+      <button class="btn" data-action="close-sheet">${first ? "적어 뒀어요" : "닫기"}</button>
+    </div>`);
 }
 
 async function submitJoin(form) {
@@ -342,7 +423,7 @@ function renderPlan() {
       <button class="btn secondary" data-action="bulk-edit">전체 표 직접 편집</button>
       <button class="btn secondary" data-action="history">변경 기록</button>
     </div>
-    <p class="hint">날짜를 누르면 체크하거나 읽기 범위를 바꿀 수 있어요. 바꾼 내용은 모두에게 적용돼요.</p>
+    <p class="hint">날짜를 누르면 체크하거나 읽기 범위를 바꿀 수 있어요. ${forAll("바꾼 내용은 모두에게 적용돼요.")}</p>
     <div class="card mt"><ul class="list">${S.plan.map((d) => dayRowHtml(d.day)).join("")}</ul></div>
     ${navHtml()}`;
 }
@@ -388,9 +469,9 @@ function renderSettings() {
       <p class="hint">점심·저녁 알림은 그날 분량을 다 체크하지 않았을 때만 와요.</p>
     </div>
 
-    <h2 class="section">모임 시작일 (DAY 1)</h2>
+    <h2 class="section">${personal() ? "나의 시작일 (DAY 1)" : "모임 시작일 (DAY 1)"}</h2>
     <form class="card" id="start-form">
-      <label class="field"><span>모든 사람에게 같이 적용돼요</span>
+      <label class="field"><span>${personal() ? "시작일을 바꾸면 날짜별 읽을 곳이 함께 바뀌어요" : "모든 사람에게 같이 적용돼요"}</span>
         <input class="input" type="date" name="start" value="${esc(S.startDate || "")}" required></label>
       <button class="btn" type="submit">시작일 저장</button>
       ${S.startDate ? `<p class="hint">현재: ${niceDate(S.startDate, true)} · 마지막 날 ${niceDate(dateOfDay(S.startDate, total()), true)}</p>` : ""}
@@ -401,6 +482,12 @@ function renderSettings() {
       <label class="field"><span>이름</span><input class="input" name="name" value="${esc(me.name)}" maxlength="20" required></label>
       <button class="btn secondary" type="submit">이름 저장</button>
     </form>
+
+    ${personal() ? `<h2 class="section">복구 코드</h2>
+    <div class="card">
+      <p style="margin:0 0 12px">폰을 바꿨을 때 기록을 이어 쓰는 코드예요.</p>
+      <button class="btn secondary block" data-action="show-code">내 복구 코드 보기</button>
+    </div>` : ""}
 
     <h2 class="section">도움말</h2>
     <div class="card">
@@ -432,7 +519,7 @@ function openDay(day) {
     <form id="day-form">
       <input class="input" name="text" value="${esc(formatChapters(d.chapters))}" autocomplete="off">
       <p class="hint" id="day-preview">예: 사도행전 28장 · 로마서 1–2장  (쉬는 날은 "쉬는 날")</p>
-      <button class="btn block mt" type="submit">범위 저장 (모두에게 적용)</button>
+      <button class="btn block mt" type="submit">범위 저장${forAll(" (모두에게 적용)")}</button>
     </form>`);
 }
 
@@ -451,7 +538,7 @@ async function saveDay(form) {
   const before = formatChapters(dayPlan(day).chapters);
   const after = formatChapters(r.chapters);
   if (before === after) { toast("바뀐 내용이 없어요."); return; }
-  if (!confirm(`DAY ${day} 범위를 바꿀까요? 모든 사람에게 적용돼요.\n\n${before}\n→ ${after}`)) return;
+  if (!confirm(`DAY ${day} 범위를 바꿀까요?${forAll(" 모든 사람에게 적용돼요.")}\n\n${before}\n→ ${after}`)) return;
   try {
     const res = await api(`/plan/day/${day}`, { method: "PUT", body: { text: form.text.value } });
     if (res.chapters) dayPlan(day).chapters = res.chapters;
@@ -465,15 +552,15 @@ function openBulkEdit() {
   const text = S.plan.map((d) => `DAY ${d.day}: ${formatChapters(d.chapters)}`).join("\n");
   openSheet(`
     <h3>전체 표 직접 편집</h3>
-    <p class="hint" style="margin-bottom:10px">한 줄에 하루씩 적어요. 줄을 더하면 날이 늘고, 지우면 줄어요. DAY 번호는 1부터 차례대로 적어 주세요. 저장하면 모두에게 적용되고, 변경 기록에서 되돌릴 수 있어요.</p>
+    <p class="hint" style="margin-bottom:10px">한 줄에 하루씩 적어요. 줄을 더하면 날이 늘고, 지우면 줄어요. DAY 번호는 1부터 차례대로 적어 주세요. 저장하면 ${forAll("모두에게 적용되고, ")}변경 기록에서 되돌릴 수 있어요.</p>
     <form id="bulk-form">
       <textarea class="input" name="text" spellcheck="false">${esc(text)}</textarea>
-      <button class="btn block mt" type="submit">전체 저장 (모두에게 적용)</button>
+      <button class="btn block mt" type="submit">전체 저장${forAll(" (모두에게 적용)")}</button>
     </form>`);
 }
 
 async function saveBulk(form) {
-  if (!confirm("전체 읽기표를 저장할까요? 모든 사람에게 적용돼요.")) return;
+  if (!confirm(`전체 읽기표를 저장할까요?${forAll(" 모든 사람에게 적용돼요.")}`)) return;
   try {
     const res = await api("/plan/bulk", { method: "PUT", body: { text: form.text.value } });
     if (res.unchanged) { toast("바뀐 내용이 없어요."); return; }
@@ -500,7 +587,7 @@ async function openHistory() {
 }
 
 async function revert(id) {
-  if (!confirm(`#${id} 변경을 되돌릴까요? 모든 사람에게 적용돼요.`)) return;
+  if (!confirm(`#${id} 변경을 되돌릴까요?${forAll(" 모든 사람에게 적용돼요.")}`)) return;
   try {
     await api(`/history/${id}/revert`, { method: "POST" });
     await loadState();
@@ -533,6 +620,7 @@ function openInstallGuide() {
 function render() {
   if (!S.token) { renderJoin(); return; }
   if (!S.loaded) { $("#app").innerHTML = `<div class="splash"><h1 class="brand">말씀 읽고<br>새 인생</h1></div>`; return; }
+  if (personal() && S.tab === "together") S.tab = "today";
   ({ today: renderToday, together: renderTogether, plan: renderPlan, settings: renderSettings }[S.tab] || renderToday)();
 }
 
@@ -595,8 +683,16 @@ document.addEventListener("click", async (ev) => {
   else if (a === "push-test") {
     try { await api("/push/test", { method: "POST" }); toast("테스트 알림을 보냈어요."); } catch (e) { toast(e.message); }
   } else if (a === "install-guide") openInstallGuide();
+  else if (a === "join-view") { S.joinView = el.dataset.view; render(); }
+  else if (a === "show-code") openRecoveryInfo();
+  else if (a === "copy-code") {
+    try { await navigator.clipboard.writeText(S.me.recoveryCode); toast("복사했어요."); } catch { toast("길게 눌러 직접 복사해 주세요."); }
+  }
   else if (a === "sign-out") {
-    if (confirm("이 기기에서 나갈까요? 기록은 남아 있고, 같은 이름으로 다시 입장하면 이어서 쓸 수 있어요.")) {
+    const bye = personal()
+      ? "이 기기에서 나갈까요? 기록은 남아 있고, 복구 코드가 있어야 다시 이어서 쓸 수 있어요."
+      : "이 기기에서 나갈까요? 기록은 남아 있고, 같은 이름으로 다시 입장하면 이어서 쓸 수 있어요.";
+    if (confirm(bye)) {
       if (S.push === "on") await disablePush();
       signOut();
     }
@@ -622,13 +718,18 @@ document.addEventListener("submit", async (ev) => {
   const f = ev.target;
   ev.preventDefault();
   if (f.id === "join-form") submitJoin(f);
+  else if (f.id === "join-personal-form") submitJoinPersonal(f);
+  else if (f.id === "recover-form") submitRecover(f);
   else if (f.id === "day-form") saveDay(f);
   else if (f.id === "bulk-form") saveBulk(f);
   else if (f.id === "name-form") saveMe({ name: f.name.value });
   else if (f.id === "start-form") {
     const v = f.start.value;
     if (v === S.startDate) { toast("바뀐 내용이 없어요."); return; }
-    if (!confirm(`모임 시작일(DAY 1)을 ${niceDate(v, true)}로 바꿀까요? 모든 사람의 "오늘 읽을 곳"이 바뀌어요.`)) return;
+    const question = personal()
+      ? `시작일(DAY 1)을 ${niceDate(v, true)}로 바꿀까요? "오늘 읽을 곳"이 바뀌어요.`
+      : `모임 시작일(DAY 1)을 ${niceDate(v, true)}로 바꿀까요? 모든 사람의 "오늘 읽을 곳"이 바뀌어요.`;
+    if (!confirm(question)) return;
     try {
       await api("/settings", { method: "PUT", body: { start_date: v } });
       await loadState();
@@ -651,6 +752,10 @@ async function start() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   const invite = new URLSearchParams(location.search).get("invite");
   if (invite) store.set("invite", invite);
+  try {
+    const config = await fetch("/api/config").then((r) => r.json());
+    if (config.mode) { S.mode = config.mode; store.set("mode", S.mode); }
+  } catch { /* 인터넷이 안 되면 마지막으로 알던 모드 사용 */ }
   if (!S.token) { render(); return; }
   render();
   try {

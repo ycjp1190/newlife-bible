@@ -5,6 +5,7 @@
 
 - 앱 주소: https://malsseum-new-life.newlife-bible.workers.dev
 - 입장에는 모임에서 받은 **초대 코드**가 필요합니다. (이 저장소에는 적지 않습니다)
+- 같은 코드로 **개인 모드**(모임 없이 혼자 읽기, 복구 코드로 이어 쓰기)도 따로 배포됩니다. 자세한 차이는 [CLAUDE.md](CLAUDE.md)를 보세요.
 
 ## 기능
 - **오늘**: 오늘의 DAY, PART, 장(章)마다 체크박스 (3장이면 3개, 1장이면 1개)
@@ -36,11 +37,12 @@
 
 ```bash
 node --test tests/*.test.mjs                     # 자동 검사
-deno run -A scripts/local-server.mjs   # 미리보기 → http://localhost:8787/?invite=test
+deno run -A scripts/local-server.mjs            # 모임 모드 미리보기
+deno run -A scripts/local-server.mjs personal   # 개인 모드 미리보기
 ```
 
 ## 배포 (자동)
-`main`에 반영되면 GitHub Actions가 검사 후 Cloudflare에 배포합니다. 필요한 비밀값은 저장소 설정의 `CLOUDFLARE_API_TOKEN` 하나이며, 알림 키·초대 코드는 Cloudflare에만 저장되어 있습니다.
+`main`에 반영되면 GitHub Actions가 검사 후 Cloudflare에 두 앱(모임용·개인용)을 모두 배포합니다. 필요한 비밀값은 저장소 설정의 `CLOUDFLARE_API_TOKEN` 하나이며, 알림 키·초대 코드는 Cloudflare에만 저장되어 있습니다.
 
 <details>
 <summary>처음부터 새로 설치하는 방법 (저장소 주인용)</summary>

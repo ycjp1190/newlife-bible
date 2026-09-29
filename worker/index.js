@@ -2,6 +2,10 @@
 // - /api/* : 앱 데이터 API
 // - 그 외   : public/ 폴더의 앱 화면
 // - 5분마다 : 알림 발송 (wrangler.toml 의 crons)
+//
+// 두 가지 모드로 배포된다 (wrangler.toml 의 MODE 값)
+// - 모임 모드(기본): 초대 코드로 입장, 시작일·읽기표를 모두가 함께 씀 (schema.sql)
+// - 개인 모드(MODE=personal): 코드 없이 시작, 사람마다 시작일·읽기표가 따로 (schema-personal.sql)
 import {
   formatChapters, kstTime, kstToday, parseChapters, validChapters,
 } from "../public/shared/bible.js";
@@ -20,11 +24,12 @@ const json = (data, status = 200) =>
 const nowIso = () => new Date().toISOString();
 const TIME_RE = /^([01]\d|2[0-3]):[0-5][05]$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isPersonal = (env) => env.MODE === "personal";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    if (!url.pathname.startsWith("/api/")) return serveAsset(request, env, url);
     try {
       return await handleApi(request, env, url);
     } catch (e) {
@@ -38,15 +43,76 @@ export default {
   },
 };
 
-// ── DB 읽기 도우미 ─────────────────────────────────────
-async function loadPlan(env) {
-  const { results } = await env.DB.prepare("SELECT day, chapters FROM plan_days ORDER BY day").all();
+// 개인 모드는 아이콘·manifest 를 public/personal/ 의 것으로 바꿔 보여 준다.
+// 모임 모드에서는 public/personal/ 을 보여 주지 않는다.
+function serveAsset(request, env, url) {
+  const p = url.pathname;
+  if (p.startsWith("/personal/")) return new Response("Not found", { status: 404 });
+  if (isPersonal(env) && (p === "/manifest.webmanifest" || p.startsWith("/icons/"))) {
+    return env.ASSETS.fetch(new Request(new URL("/personal" + p, url), request));
+  }
+  return env.ASSETS.fetch(request);
+}
+
+// ── DB 읽기·쓰기 도우미 ─────────────────────────────────
+// 읽기표·시작일·변경 기록은 모임 모드에선 모두 공용, 개인 모드에선 사람(me)별이다.
+
+async function loadPlan(env, me) {
+  const stmt = isPersonal(env)
+    ? env.DB.prepare("SELECT day, chapters FROM member_plan WHERE member_id = ? ORDER BY day").bind(me.id)
+    : env.DB.prepare("SELECT day, chapters FROM plan_days ORDER BY day");
+  const { results } = await stmt.all();
   return results.map((r) => ({ day: r.day, chapters: JSON.parse(r.chapters) }));
 }
 
-async function getSetting(env, key) {
-  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first();
+function getDayRow(env, me, day) {
+  return isPersonal(env)
+    ? env.DB.prepare("SELECT chapters FROM member_plan WHERE member_id = ? AND day = ?").bind(me.id, day).first()
+    : env.DB.prepare("SELECT chapters FROM plan_days WHERE day = ?").bind(day).first();
+}
+
+function setDayStmt(env, me, day, chapters) {
+  return isPersonal(env)
+    ? env.DB.prepare("UPDATE member_plan SET chapters = ? WHERE member_id = ? AND day = ?").bind(chapters, me.id, day)
+    : env.DB.prepare("UPDATE plan_days SET chapters = ? WHERE day = ?").bind(chapters, day);
+}
+
+async function replacePlan(env, me, plan, extra) {
+  const stmts = [isPersonal(env)
+    ? env.DB.prepare("DELETE FROM member_plan WHERE member_id = ?").bind(me.id)
+    : env.DB.prepare("DELETE FROM plan_days")];
+  for (const d of plan) {
+    if (!validChapters(d.chapters)) throw new HttpError(400, `DAY ${d.day} 범위가 올바르지 않아요.`);
+    const chapters = JSON.stringify(d.chapters);
+    stmts.push(isPersonal(env)
+      ? env.DB.prepare("INSERT INTO member_plan (member_id, day, chapters) VALUES (?, ?, ?)").bind(me.id, d.day, chapters)
+      : env.DB.prepare("INSERT INTO plan_days (day, chapters) VALUES (?, ?)").bind(d.day, chapters));
+  }
+  await env.DB.batch([...stmts, ...extra]);
+}
+
+async function getStartDate(env, me) {
+  if (isPersonal(env)) return me.start_date;
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'start_date'").first();
   return row ? row.value : null;
+}
+
+function setStartDateStmt(env, me, value) {
+  if (isPersonal(env)) return env.DB.prepare("UPDATE members SET start_date = ? WHERE id = ?").bind(value, me.id);
+  return value === null
+    ? env.DB.prepare("DELETE FROM settings WHERE key = 'start_date'")
+    : env.DB.prepare("INSERT INTO settings (key, value) VALUES ('start_date', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .bind(value);
+}
+
+function historyStmt(env, me, kind, day, before, after, note = null) {
+  return isPersonal(env)
+    ? env.DB.prepare(
+      "INSERT INTO history (member_id, kind, day, before_value, after_value, member_name, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(me.id, kind, day, before, after, me.name, note, nowIso())
+    : env.DB.prepare(
+      "INSERT INTO history (kind, day, before_value, after_value, member_name, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(kind, day, before, after, me.name, note, nowIso());
 }
 
 // Map<memberId, Map<day, Set<chapterKey>>>
@@ -78,6 +144,7 @@ const publicMember = (m) => ({
   id: m.id, name: m.name,
   morning: m.morning, lunch: m.lunch, evening: m.evening,
   morning_on: !!m.morning_on, lunch_on: !!m.lunch_on, evening_on: !!m.evening_on,
+  ...(m.recovery_code ? { recoveryCode: m.recovery_code } : {}),
 });
 
 async function readBody(request) {
@@ -90,25 +157,47 @@ function cleanName(name) {
   return n;
 }
 
+function checkDate(value) {
+  if (!DATE_RE.test(value || "") || Number.isNaN(Date.parse(value))) {
+    throw new HttpError(400, "날짜 형식이 올바르지 않아요.");
+  }
+  return value;
+}
+
+const newToken = () => b64urlEncode(crypto.getRandomValues(new Uint8Array(24)));
+
+// 헷갈리는 글자(0/O, 1/I/L)를 뺀 8자리 복구 코드. 예: "K7MX-Q2PD"
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newRecoveryCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  const s = [...bytes].map((b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
+  return `${s.slice(0, 4)}-${s.slice(4)}`;
+}
+const normalizeCode = (code) => {
+  const s = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return s.length === 8 ? `${s.slice(0, 4)}-${s.slice(4)}` : null;
+};
+
 // ── API ────────────────────────────────────────────────
 async function handleApi(request, env, url) {
   const path = url.pathname.slice(4); // "/api" 제거
   const method = request.method;
 
-  // 입장 (초대 코드 + 이름). 같은 이름이 있으면 그 사람으로 이어서 사용
+  // 앱 화면이 어떤 모드로 그릴지 알려 준다 (입장 전에도 필요)
+  if (path === "/config" && method === "GET") {
+    return json({ mode: isPersonal(env) ? "personal" : "group" });
+  }
+
   if (path === "/join" && method === "POST") {
-    const { name, invite } = await readBody(request);
-    if (!env.INVITE_CODE || String(invite || "").trim() !== env.INVITE_CODE) {
-      throw new HttpError(403, "초대 코드가 맞지 않아요.");
-    }
-    const n = cleanName(name);
-    let me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
-    if (!me) {
-      const token = b64urlEncode(crypto.getRandomValues(new Uint8Array(24)));
-      await env.DB.prepare("INSERT INTO members (name, token, created_at) VALUES (?, ?, ?)")
-        .bind(n, token, nowIso()).run();
-      me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
-    }
+    return isPersonal(env) ? joinPersonal(request, env) : joinGroup(request, env);
+  }
+
+  // 개인 모드: 복구 코드로 다른 기기에서 이어 쓰기
+  if (path === "/recover" && method === "POST" && isPersonal(env)) {
+    const { code } = await readBody(request);
+    const c = normalizeCode(code);
+    const me = c && await env.DB.prepare("SELECT * FROM members WHERE recovery_code = ?").bind(c).first();
+    if (!me) throw new HttpError(404, "복구 코드가 맞지 않아요. 다시 확인해 주세요.");
     return json({ token: me.token, member: publicMember(me) });
   }
 
@@ -116,11 +205,12 @@ async function handleApi(request, env, url) {
 
   if (path === "/state" && method === "GET") {
     const [plan, startDate, checks] = await Promise.all([
-      loadPlan(env), getSetting(env, "start_date"), loadChecks(env, me.id),
+      loadPlan(env, me), getStartDate(env, me), loadChecks(env, me.id),
     ]);
     const mine = {};
     for (const [day, set] of checks.get(me.id) || []) mine[day] = [...set];
     return json({
+      mode: isPersonal(env) ? "personal" : "group",
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
     });
@@ -141,10 +231,10 @@ async function handleApi(request, env, url) {
     return json({ ok: true });
   }
 
-  // 함께 읽기: 모든 사람의 진행 현황
-  if (path === "/members" && method === "GET") {
+  // 함께 읽기: 모든 사람의 진행 현황 (모임 모드 전용)
+  if (path === "/members" && method === "GET" && !isPersonal(env)) {
     const [plan, startDate, checks, { results: members }] = await Promise.all([
-      loadPlan(env), getSetting(env, "start_date"), loadChecks(env),
+      loadPlan(env, me), getStartDate(env, me), loadChecks(env),
       env.DB.prepare("SELECT id, name, last_seen_at FROM members ORDER BY name").all(),
     ]);
     const today = kstToday();
@@ -169,13 +259,13 @@ async function handleApi(request, env, url) {
     const { text } = await readBody(request);
     const parsed = parseChapters(text);
     if (parsed.error) throw new HttpError(400, parsed.error);
-    const row = await env.DB.prepare("SELECT chapters FROM plan_days WHERE day = ?").bind(day).first();
+    const row = await getDayRow(env, me, day);
     if (!row) throw new HttpError(404, `DAY ${day}가 없어요.`);
     const after = JSON.stringify(parsed.chapters);
     if (after === row.chapters) return json({ ok: true, unchanged: true });
     await env.DB.batch([
-      env.DB.prepare("UPDATE plan_days SET chapters = ? WHERE day = ?").bind(after, day),
-      historyStmt(env, "day", day, row.chapters, after, me.name),
+      setDayStmt(env, me, day, after),
+      historyStmt(env, me, "day", day, row.chapters, after),
     ]);
     return json({ ok: true, chapters: parsed.chapters });
   }
@@ -184,58 +274,59 @@ async function handleApi(request, env, url) {
   if (path === "/plan/bulk" && method === "PUT") {
     const { text } = await readBody(request);
     const plan = parseBulk(text);
-    const before = JSON.stringify(await loadPlan(env));
+    const before = JSON.stringify(await loadPlan(env, me));
     const after = JSON.stringify(plan);
     if (before === after) return json({ ok: true, unchanged: true });
-    await replacePlan(env, plan, [historyStmt(env, "bulk", null, before, after, me.name)]);
+    await replacePlan(env, me, plan, [historyStmt(env, me, "bulk", null, before, after)]);
     return json({ ok: true, days: plan.length });
   }
 
   if (path === "/history" && method === "GET") {
-    const { results } = await env.DB.prepare(
-      "SELECT id, kind, day, before_value, after_value, member_name, note, created_at FROM history ORDER BY id DESC LIMIT 100",
-    ).all();
+    const cols = "id, kind, day, before_value, after_value, member_name, note, created_at";
+    const stmt = isPersonal(env)
+      ? env.DB.prepare(`SELECT ${cols} FROM history WHERE member_id = ? ORDER BY id DESC LIMIT 100`).bind(me.id)
+      : env.DB.prepare(`SELECT ${cols} FROM history ORDER BY id DESC LIMIT 100`);
+    const { results } = await stmt.all();
     return json({ history: results.map(describeHistory) });
   }
 
   const revertMatch = path.match(/^\/history\/(\d+)\/revert$/);
   if (revertMatch && method === "POST") {
     const h = await env.DB.prepare("SELECT * FROM history WHERE id = ?").bind(Number(revertMatch[1])).first();
-    if (!h) throw new HttpError(404, "변경 기록을 찾지 못했어요.");
+    if (!h || (isPersonal(env) && h.member_id !== me.id)) throw new HttpError(404, "변경 기록을 찾지 못했어요.");
     const note = `#${h.id} 되돌리기`;
     if (h.kind === "day") {
-      const row = await env.DB.prepare("SELECT chapters FROM plan_days WHERE day = ?").bind(h.day).first();
+      const row = await getDayRow(env, me, h.day);
       if (!row) throw new HttpError(409, `DAY ${h.day}가 지금 읽기표에 없어요.`);
       await env.DB.batch([
-        env.DB.prepare("UPDATE plan_days SET chapters = ? WHERE day = ?").bind(h.before_value, h.day),
-        historyStmt(env, "day", h.day, row.chapters, h.before_value, me.name, note),
+        setDayStmt(env, me, h.day, h.before_value),
+        historyStmt(env, me, "day", h.day, row.chapters, h.before_value, note),
       ]);
     } else if (h.kind === "bulk") {
-      const current = JSON.stringify(await loadPlan(env));
-      await replacePlan(env, JSON.parse(h.before_value), [
-        historyStmt(env, "bulk", null, current, h.before_value, me.name, note),
+      const current = JSON.stringify(await loadPlan(env, me));
+      await replacePlan(env, me, JSON.parse(h.before_value), [
+        historyStmt(env, me, "bulk", null, current, h.before_value, note),
       ]);
     } else if (h.kind === "start_date") {
-      const current = await getSetting(env, "start_date");
+      if (isPersonal(env) && !h.before_value) throw new HttpError(409, "처음 정한 시작일은 되돌릴 수 없어요.");
+      const current = await getStartDate(env, me);
       await env.DB.batch([
-        setSettingStmt(env, "start_date", h.before_value),
-        historyStmt(env, "start_date", null, current, h.before_value, me.name, note),
+        setStartDateStmt(env, me, h.before_value),
+        historyStmt(env, me, "start_date", null, current, h.before_value, note),
       ]);
     }
     return json({ ok: true });
   }
 
-  // 공통 시작일 변경
+  // 시작일 변경 (모임: 모두 공통 / 개인: 나만)
   if (path === "/settings" && method === "PUT") {
     const { start_date } = await readBody(request);
-    if (!DATE_RE.test(start_date || "") || Number.isNaN(Date.parse(start_date))) {
-      throw new HttpError(400, "날짜 형식이 올바르지 않아요.");
-    }
-    const current = await getSetting(env, "start_date");
+    checkDate(start_date);
+    const current = await getStartDate(env, me);
     if (current === start_date) return json({ ok: true, unchanged: true });
     await env.DB.batch([
-      setSettingStmt(env, "start_date", start_date),
-      historyStmt(env, "start_date", null, current, start_date, me.name),
+      setStartDateStmt(env, me, start_date),
+      historyStmt(env, me, "start_date", null, current, start_date),
     ]);
     return json({ ok: true });
   }
@@ -252,7 +343,7 @@ async function handleApi(request, env, url) {
       }
       if (body[`${slot}_on`] !== undefined) next[`${slot}_on`] = body[`${slot}_on`] ? 1 : 0;
     }
-    if (next.name !== me.name) {
+    if (next.name !== me.name && !isPersonal(env)) {
       const dup = await env.DB.prepare("SELECT id FROM members WHERE name = ? AND id != ?").bind(next.name, me.id).first();
       if (dup) throw new HttpError(409, "이미 있는 이름이에요.");
     }
@@ -293,26 +384,42 @@ async function handleApi(request, env, url) {
   throw new HttpError(404, "없는 요청이에요.");
 }
 
-function historyStmt(env, kind, day, before, after, memberName, note = null) {
-  return env.DB.prepare(
-    "INSERT INTO history (kind, day, before_value, after_value, member_name, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).bind(kind, day, before, after, memberName, note, nowIso());
-}
-
-function setSettingStmt(env, key, value) {
-  return value === null
-    ? env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(key)
-    : env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-      .bind(key, value);
-}
-
-async function replacePlan(env, plan, extra) {
-  const stmts = [env.DB.prepare("DELETE FROM plan_days")];
-  for (const d of plan) {
-    if (!validChapters(d.chapters)) throw new HttpError(400, `DAY ${d.day} 범위가 올바르지 않아요.`);
-    stmts.push(env.DB.prepare("INSERT INTO plan_days (day, chapters) VALUES (?, ?)").bind(d.day, JSON.stringify(d.chapters)));
+// 모임 모드 입장 (초대 코드 + 이름). 같은 이름이 있으면 그 사람으로 이어서 사용
+async function joinGroup(request, env) {
+  const { name, invite } = await readBody(request);
+  if (!env.INVITE_CODE || String(invite || "").trim() !== env.INVITE_CODE) {
+    throw new HttpError(403, "초대 코드가 맞지 않아요.");
   }
-  await env.DB.batch([...stmts, ...extra]);
+  const n = cleanName(name);
+  let me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
+  if (!me) {
+    await env.DB.prepare("INSERT INTO members (name, token, created_at) VALUES (?, ?, ?)")
+      .bind(n, newToken(), nowIso()).run();
+    me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
+  }
+  return json({ token: me.token, member: publicMember(me) });
+}
+
+// 개인 모드 시작 (이름 + 시작일). 기본 읽기표를 복사해 나만의 읽기표를 만든다.
+async function joinPersonal(request, env) {
+  const { name, start_date } = await readBody(request);
+  const n = cleanName(name);
+  checkDate(start_date);
+  const token = newToken();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await env.DB.prepare(
+        "INSERT INTO members (name, token, recovery_code, start_date, created_at) VALUES (?, ?, ?, ?, ?)",
+      ).bind(n, token, newRecoveryCode(), start_date, nowIso()).run();
+      break;
+    } catch (e) {
+      if (attempt >= 3) throw e; // 복구 코드가 우연히 겹치면 다시 만든다
+    }
+  }
+  const me = await env.DB.prepare("SELECT * FROM members WHERE token = ?").bind(token).first();
+  await env.DB.prepare("INSERT INTO member_plan (member_id, day, chapters) SELECT ?, day, chapters FROM plan_days")
+    .bind(me.id).run();
+  return json({ token, member: publicMember(me) });
 }
 
 // 전체 편집 글 → [{day, chapters}]. 줄 순서대로 DAY 1, 2, 3 ... 이어야 한다.
@@ -376,12 +483,13 @@ async function pushToMember(env, memberId, data) {
 async function runNotifications(env, now) {
   const today = kstToday(now);
   const time = kstTime(now);
-  const [plan, startDate, checks, { results: members }, { results: sentRows }] = await Promise.all([
-    loadPlan(env), getSetting(env, "start_date"), loadChecks(env),
+  const [checks, { results: members }, { results: sentRows }] = await Promise.all([
+    loadChecks(env),
     env.DB.prepare("SELECT m.* FROM members m WHERE EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id)").all(),
     env.DB.prepare("SELECT member_id, slot FROM sent_log WHERE date = ?").bind(today).all(),
   ]);
-  if (!startDate) return;
+  // 모임 모드는 읽기표·시작일이 한 벌이므로 한 번만 읽는다
+  const shared = isPersonal(env) ? null : { plan: await loadPlan(env, null), startDate: await getStartDate(env, null) };
   const sentBy = new Map();
   for (const r of sentRows) {
     if (!sentBy.has(r.member_id)) sentBy.set(r.member_id, new Set());
@@ -390,6 +498,9 @@ async function runNotifications(env, now) {
   for (const m of members) {
     const slots = dueSlots(m, time, sentBy.get(m.id) || new Set());
     if (!slots.length) continue;
+    const plan = shared ? shared.plan : await loadPlan(env, m);
+    const startDate = shared ? shared.startDate : m.start_date;
+    if (!startDate) continue;
     const prog = progress(plan, startDate, today, checks.get(m.id) || new Map());
     // 여러 칸이 한꺼번에 밀렸으면 가장 최근 칸 하나만 보낸다
     const slot = slots[slots.length - 1];
