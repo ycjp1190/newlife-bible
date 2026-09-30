@@ -1,7 +1,9 @@
 // "말씀 읽고 새 인생" 앱 화면
 import {
-  chapterKey, dateOfDay, dayIndex, formatChapters, isDayDone, kstToday, parseChapters, partOf, PART_TITLES,
+  chapterKey, dateOfDay, dayIndex, formatChapters, isDayDone, itemLabel, kstToday, parseChapters,
 } from "./shared/bible.js";
+import { daysNeeded, isFixed, PER_DAY_CHOICES, ROADMAP_ORDER, ROADMAPS, sectionLabel } from "./shared/roadmaps.js";
+import { MCHEYNE } from "./shared/mcheyne.js";
 
 // ── 기본 도구 ─────────────────────────────────────────
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -17,12 +19,16 @@ const S = {
   me: null, plan: [], startDate: null, today: kstToday(), checks: new Map(),
   vapid: null, loaded: false, tab: store.get("tab") || "today",
   mode: store.get("mode") || "group", joinView: "new",
+  roadmap: "flow397", perDay: 3,
+  pick: null, // 개인 모드 계획 고르기 { step, context: "join"|"change", name, roadmap, perDay, start }
   members: null, showAllMissed: false, push: "unknown",
 };
 
 // 개인 모드(혼자 읽기)인지. 모임 모드에서만 "모두에게 적용" 같은 문구를 보여 준다.
 const personal = () => S.mode === "personal";
 const forAll = (text) => (personal() ? "" : text);
+// 맥체인처럼 읽기표를 바꿀 수 없는 계획인지
+const fixedPlan = () => personal() && isFixed(S.roadmap);
 // 앱 이름 (개인 모드는 뒤에 "개인용")
 const appName = () => (personal() ? "말씀 읽고 새 인생 (개인용)" : "말씀 읽고 새 인생");
 const homeName = () => (personal() ? "말씀 새 인생 개인용" : "말씀 새 인생");
@@ -75,10 +81,8 @@ function missedDays() {
   for (let d = 1; d < Math.min(t, total() + 1); d++) if (!dayDone(d)) out.push(d);
   return out;
 }
-const partLabel = (chapters) => {
-  const p = partOf(chapters);
-  return p ? `${pad2(p)} · ${PART_TITLES[p]}` : "쉬는 날";
-};
+const partLabel = (chapters) => sectionLabel(S.roadmap, chapters);
+const monthDay = (iso) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`;
 
 // ── 데이터 불러오기 ───────────────────────────────────
 async function loadState() {
@@ -86,6 +90,8 @@ async function loadState() {
   S.me = data.me;
   if (data.mode) S.mode = data.mode;
   S.plan = data.plan;
+  S.roadmap = data.roadmap || "flow397";
+  S.perDay = data.perDay || 3;
   S.startDate = data.startDate;
   S.today = data.today;
   S.vapid = data.vapidPublicKey;
@@ -166,7 +172,7 @@ function checksHtml(day) {
     const key = chapterKey(c);
     const on = set.has(key);
     return `<li><button class="check" role="checkbox" aria-checked="${on}" data-action="toggle" data-day="${day}" data-key="${esc(key)}">
-      <span class="box">${CHECK_SVG}</span><span class="label">${esc(c[0])} ${c[1]}장</span></button></li>`;
+      <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button></li>`;
   }).join("")}</ul>`;
 }
 
@@ -225,6 +231,7 @@ function renderJoin() {
 // 개인 모드 입장: 이름 + 시작일 / 복구 코드로 이어 쓰기
 function renderJoinPersonal() {
   const iosBrowser = isIOS() && !isStandalone();
+  if (!S.pick || S.pick.context !== "join") S.pick = { step: "name", context: "join", name: "", roadmap: null, perDay: 3, start: kstToday() };
   const form = S.joinView === "recover"
     ? `<form class="card" id="recover-form">
         <label class="field"><span>복구 코드</span>
@@ -233,19 +240,11 @@ function renderJoinPersonal() {
         <p class="hint">처음 시작할 때 받은 8자리 코드예요. 설정 화면에서도 볼 수 있어요.</p>
         <button class="btn ghost block mt" type="button" data-action="join-view" data-view="new">처음 시작하기로 돌아가기</button>
       </form>`
-    : `<form class="card" id="join-personal-form">
-        <label class="field"><span>이름</span>
-          <input class="input" name="name" autocomplete="name" maxlength="20" required placeholder="예: 홍길동"></label>
-        <label class="field"><span>시작일 (DAY 1)</span>
-          <input class="input" type="date" name="start" value="${esc(kstToday())}" required></label>
-        <button class="btn block" type="submit">시작하기</button>
-        <p class="hint">하루 3장씩, 397일 동안 성경 전체를 읽어요. 시작일은 나중에 바꿀 수 있어요.</p>
-        <button class="btn ghost block mt" type="button" data-action="join-view" data-view="recover">전에 쓰던 기록이 있어요</button>
-      </form>`;
+    : `<div class="card">${pickerHtml()}</div>`;
   $("#app").innerHTML = `
     <section class="join">
       ${brandHtml()}
-      <p class="tagline">397일, 성경 전체를 읽어요</p>
+      <p class="tagline">나에게 맞는 순서와 분량으로 성경 전체를 읽어요</p>
       ${iosBrowser ? `<div class="notice"><p>아이폰은 먼저 <b>홈 화면에 추가</b>한 뒤, 홈 화면의 앱 아이콘으로 들어와서 시작해야 알림을 받을 수 있어요.</p>
         <button class="btn secondary" data-action="install-guide">방법 보기</button></div>` : ""}
       ${form}
@@ -262,13 +261,122 @@ async function finishJoin(data, welcome) {
   toast(welcome);
 }
 
-async function submitJoinPersonal(form) {
-  const btn = form.querySelector("button[type=submit]");
+// ── 계획 고르기 (개인 모드 시작 화면·설정의 '계획 바꾸기'에서 같이 씀) ──
+// 단계: name(시작할 때만) → roadmap → perday(맥체인은 건너뜀) → start (맥체인은 mcstart)
+function pickSteps() {
+  const p = S.pick;
+  const base = p.context === "join" ? ["name", "roadmap"] : ["roadmap"];
+  return p.roadmap && isFixed(p.roadmap) ? [...base, "mcstart"] : [...base, "perday", "start"];
+}
+
+function durationText(days) {
+  const y = Math.floor(days / 365);
+  const m = Math.round((days % 365) / 30.4);
+  const parts = [y ? `${y}년` : "", m ? `${m}개월` : ""].filter(Boolean);
+  return parts.length ? `약 ${parts.join(" ")}` : `${days}일`;
+}
+
+function planSummaryHtml(p) {
+  const days = daysNeeded(p.roadmap, p.perDay);
+  return `<div class="pick-summary">
+    <p>하루 <b>${p.perDay}장</b>이면 1독에 <b>${days.toLocaleString()}일</b>(${durationText(days)}) 걸려요.</p>
+    <p class="muted">${niceDate(p.start, true)}에 시작하면 <b>${niceDate(dateOfDay(p.start, days), true)}</b>에 끝나요.</p>
+  </div>`;
+}
+
+function pickerHtml() {
+  const p = S.pick;
+  const steps = pickSteps();
+  const idx = steps.indexOf(p.step);
+  const dots = `<div class="pick-dots" aria-hidden="true">${steps.map((_, i) => `<i class="${i <= idx ? "on" : ""} ${i === idx ? "now" : ""}"></i>`).join("")}</div>
+    <p class="pick-step">${idx + 1} / ${steps.length} 단계</p>`;
+  const back = idx > 0 ? `<button class="btn secondary" type="button" data-action="pick-back">이전</button>` : "";
+  const finish = p.context === "join" ? "시작하기" : "이 계획으로 바꾸기";
+
+  if (p.step === "name") {
+    return `${dots}<form id="pick-name-form">
+      <p class="pick-q">이름을 알려 주세요</p>
+      <input class="input" name="name" value="${esc(p.name)}" autocomplete="name" maxlength="20" required placeholder="예: 홍길동">
+      <button class="btn block mt" type="submit">다음</button>
+      <button class="btn ghost block mt" type="button" data-action="join-view" data-view="recover">전에 쓰던 기록이 있어요</button>
+    </form>`;
+  }
+  if (p.step === "roadmap") {
+    return `${dots}<p class="pick-q">어떤 순서로 읽을까요?</p>
+      ${ROADMAP_ORDER.map((id) => {
+        const r = ROADMAPS[id];
+        return `<button class="rm ${p.roadmap === id ? "on" : ""}" type="button" data-action="pick-roadmap" data-id="${id}">
+          <span class="rm-title">${esc(r.name)}${S.pick.context === "change" && S.roadmap === id ? ` <span class="chip">지금 계획</span>` : ""}</span>
+          <span class="rm-desc">${esc(r.intro)}</span>
+          <span class="rm-tag ${r.fixed ? "fixed" : ""}">${esc(r.forWhom)}</span>
+        </button>`;
+      }).join("")}
+      ${back ? `<div class="btn-row">${back}</div>` : ""}`;
+  }
+  if (p.step === "perday") {
+    return `${dots}<p class="pick-q">하루에 몇 장 읽으실 건가요?</p>
+      <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS[p.roadmap].name)}</p>
+      <div class="pick-chips">${PER_DAY_CHOICES.map((n) => `<button class="pchip ${p.perDay === n ? "on" : ""}" type="button" data-action="pick-perday" data-n="${n}">${n}장</button>`).join("")}</div>
+      ${planSummaryHtml(p)}
+      <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-next">다음: 시작일</button></div>`;
+  }
+  if (p.step === "start") {
+    return `${dots}<p class="pick-q">언제부터 읽을까요?</p>
+      <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS[p.roadmap].name)} · 하루 ${p.perDay}장</p>
+      <input class="input" type="date" id="pick-start" value="${esc(p.start)}" required>
+      ${planSummaryHtml(p)}
+      ${p.context === "change" ? `<p class="hint">새 계획으로 DAY 1부터 다시 시작해요. 지금까지의 체크 기록은 보관돼요.</p>` : ""}
+      <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-submit">${finish}</button></div>`;
+  }
+  // mcstart: 맥체인은 오늘 날짜 본문부터
+  const today = kstToday();
+  const readings = MCHEYNE[today.slice(5)] || [];
+  return `${dots}<p class="pick-q">오늘 날짜 본문부터 시작해요</p>
+    <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS.mcheyne.note)}</p>
+    <div class="pick-summary"><p class="muted" style="margin:0 0 6px">${monthDay(today)} 본문</p>
+      <ul class="plain">${readings.map((c) => `<li>${esc(itemLabel(c))}</li>`).join("")}</ul></div>
+    <p class="hint">하루 분량은 맥체인 읽기표대로 정해져 있어 따로 고르지 않아요.${p.context === "change" ? " 지금까지의 체크 기록은 보관돼요." : ""}</p>
+    <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-submit">${finish}</button></div>`;
+}
+
+function rerenderPicker() {
+  if (S.pick.context === "join") render();
+  else openSheet(pickerHtml());
+}
+
+function pickGo(delta) {
+  const steps = pickSteps();
+  S.pick.step = steps[Math.max(0, Math.min(steps.length - 1, steps.indexOf(S.pick.step) + delta))];
+  rerenderPicker();
+}
+
+function openPlanChange() {
+  S.pick = { step: "roadmap", context: "change", roadmap: S.roadmap, perDay: S.perDay, start: kstToday() };
+  openSheet(pickerHtml());
+}
+
+async function submitPick(btn) {
+  const p = S.pick;
+  const start = isFixed(p.roadmap) ? kstToday() : p.start;
+  const body = { roadmap: p.roadmap, per_day: p.perDay, start_date: start };
   btn.disabled = true;
   try {
-    const data = await api("/join", { method: "POST", body: { name: form.name.value.trim(), start_date: form.start.value } });
-    await finishJoin(data, `${data.member.name}님, 함께 시작해요!`);
-    openRecoveryInfo(true);
+    if (p.context === "join") {
+      const data = await api("/join", { method: "POST", body: { name: p.name, ...body } });
+      S.pick = null;
+      await finishJoin(data, `${data.member.name}님, 함께 시작해요!`);
+      openRecoveryInfo(true);
+    } else {
+      const label = isFixed(p.roadmap) ? ROADMAPS[p.roadmap].name : `${ROADMAPS[p.roadmap].name} · 하루 ${p.perDay}장`;
+      if (!confirm(`'${label}'(으)로 바꿀까요?\n새 계획으로 처음부터 시작하고, 지금까지의 체크 기록은 보관돼요.`)) { btn.disabled = false; return; }
+      await api("/plan/choose", { method: "PUT", body });
+      S.pick = null;
+      await loadState();
+      closeSheet();
+      S.tab = "today";
+      render();
+      toast("새 계획으로 시작해요!");
+    }
   } catch (e) { toast(e.message); btn.disabled = false; }
 }
 
@@ -344,7 +452,7 @@ function renderToday() {
     const d = dayPlan(t);
     const done = dayDone(t);
     main = `<div class="card">
-      <div class="today-head"><div class="day-no">DAY ${t} <small>/ ${total()}</small></div><span class="chip">${esc(partLabel(d.chapters))}</span></div>
+      <div class="today-head"><div class="day-no">${fixedPlan() ? `${monthDay(S.today)} <small>본문</small>` : `DAY ${t} <small>/ ${total()}</small>`}</div><span class="chip">${esc(partLabel(d.chapters))}</span></div>
       <p class="passage">${esc(formatChapters(d.chapters))}</p>
       ${checksHtml(t)}
       ${done ? `<p class="done-banner">오늘 말씀 완료! 🙌</p>` : ""}
@@ -377,7 +485,7 @@ function dayRowHtml(day) {
   const mark = done ? "✓" : partial ? `${partial}/${d.chapters.length}` : isMissed ? "•" : "";
   const date = S.startDate ? niceDate(dateOfDay(S.startDate, day)) : "";
   return `<li><button class="row ${day === t ? "is-today" : ""} ${isMissed ? "missed" : ""}" data-action="open-day" data-day="${day}" id="day-${day}">
-    <span class="main"><span class="title">DAY ${day} · ${esc(formatChapters(d.chapters))}</span>
+    <span class="main"><span class="title">${fixedPlan() ? "" : `DAY ${day} · `}${esc(formatChapters(d.chapters))}</span>
     <span class="sub">${date}${day === t ? " · 오늘" : ""}</span></span>
     <span class="mark" aria-label="${done ? "완료" : isMissed ? "밀림" : ""}">${mark}</span></button></li>`;
 }
@@ -424,10 +532,12 @@ function renderPlan() {
     <header class="top"><h1>전체 일정</h1><span class="date">${doneCount} / ${total()}일 완료</span></header>
     <div class="btn-row" style="margin-top:0">
       ${t >= 1 && t <= total() ? `<button class="btn secondary" data-action="jump-today">오늘로 이동</button>` : ""}
-      <button class="btn secondary" data-action="bulk-edit">전체 표 직접 편집</button>
-      <button class="btn secondary" data-action="history">변경 기록</button>
+      ${fixedPlan() ? "" : `<button class="btn secondary" data-action="bulk-edit">전체 표 직접 편집</button>
+      <button class="btn secondary" data-action="history">변경 기록</button>`}
     </div>
-    <p class="hint">날짜를 누르면 체크하거나 읽기 범위를 바꿀 수 있어요. ${forAll("바꾼 내용은 모두에게 적용돼요.")}</p>
+    <p class="hint">${fixedPlan()
+      ? "날짜를 누르면 그날 본문을 체크할 수 있어요. 맥체인 읽기표는 바꿀 수 없어요."
+      : `날짜를 누르면 체크하거나 읽기 범위를 바꿀 수 있어요. ${forAll("바꾼 내용은 모두에게 적용돼요.")}`}</p>
     <div class="card mt"><ul class="list">${S.plan.map((d) => dayRowHtml(d.day)).join("")}</ul></div>
     ${navHtml()}`;
 }
@@ -473,13 +583,20 @@ function renderSettings() {
       <p class="hint">점심·저녁 알림은 그날 분량을 다 체크하지 않았을 때만 와요.</p>
     </div>
 
-    <h2 class="section">${personal() ? "나의 시작일 (DAY 1)" : "모임 시작일 (DAY 1)"}</h2>
+    ${personal() ? `<h2 class="section">읽기 계획</h2>
+    <div class="card">
+      <p style="margin:0 0 4px"><b>${esc(ROADMAPS[S.roadmap]?.name || "")}</b></p>
+      <p class="muted" style="margin:0 0 12px">${fixedPlan() ? `달력 날짜 기준 · 하루 4곳 · ${niceDate(S.startDate, true)} 시작` : `하루 ${S.perDay}장 · ${total()}일 · ${niceDate(S.startDate, true)} 시작`}</p>
+      <button class="btn secondary block" data-action="plan-change">계획 바꾸기</button>
+    </div>` : ""}
+
+    ${fixedPlan() ? "" : `<h2 class="section">${personal() ? "나의 시작일 (DAY 1)" : "모임 시작일 (DAY 1)"}</h2>
     <form class="card" id="start-form">
       <label class="field"><span>${personal() ? "시작일을 바꾸면 날짜별 읽을 곳이 함께 바뀌어요" : "모든 사람에게 같이 적용돼요"}</span>
         <input class="input" type="date" name="start" value="${esc(S.startDate || "")}" required></label>
       <button class="btn" type="submit">시작일 저장</button>
       ${S.startDate ? `<p class="hint">현재: ${niceDate(S.startDate, true)} · 마지막 날 ${niceDate(dateOfDay(S.startDate, total()), true)}</p>` : ""}
-    </form>
+    </form>`}
 
     <h2 class="section">내 정보</h2>
     <form class="card" id="name-form">
@@ -515,6 +632,13 @@ function openDay(day) {
   openDayNo = day;
   const d = dayPlan(day);
   const date = S.startDate ? niceDate(dateOfDay(S.startDate, day), true) : "시작일 미정";
+  if (fixedPlan()) {
+    openSheet(`
+      <h3>${S.startDate ? monthDay(dateOfDay(S.startDate, day)) : ""} 본문</h3>
+      <p class="muted" style="margin:0 0 14px">${date} · 333 · 맥체인</p>
+      <div id="day-checks">${checksHtml(day)}</div>`);
+    return;
+  }
   openSheet(`
     <h3>DAY ${day}</h3>
     <p class="muted" style="margin:0 0 14px">${date} · ${esc(partLabel(d.chapters))}</p>
@@ -688,6 +812,14 @@ document.addEventListener("click", async (ev) => {
     try { await api("/push/test", { method: "POST" }); toast("테스트 알림을 보냈어요."); } catch (e) { toast(e.message); }
   } else if (a === "install-guide") openInstallGuide();
   else if (a === "join-view") { S.joinView = el.dataset.view; render(); }
+  else if (a === "pick-roadmap") {
+    S.pick.roadmap = el.dataset.id;
+    pickGo(1);
+  } else if (a === "pick-perday") { S.pick.perDay = Number(el.dataset.n); rerenderPicker(); }
+  else if (a === "pick-next") pickGo(1);
+  else if (a === "pick-back") pickGo(-1);
+  else if (a === "pick-submit") submitPick(el);
+  else if (a === "plan-change") openPlanChange();
   else if (a === "show-code") openRecoveryInfo();
   else if (a === "copy-code") {
     try { await navigator.clipboard.writeText(S.me.recoveryCode); toast("복사했어요."); } catch { toast("길게 눌러 직접 복사해 주세요."); }
@@ -705,6 +837,7 @@ document.addEventListener("click", async (ev) => {
 
 document.addEventListener("change", (ev) => {
   const el = ev.target;
+  if (el.id === "pick-start" && el.value) { S.pick.start = el.value; rerenderPicker(); return; }
   if (el.dataset.action === "slot-on") saveMe({ [`${el.dataset.slot}_on`]: el.checked });
   if (el.dataset.action === "time") {
     const slot = el.dataset.slot;
@@ -716,13 +849,19 @@ document.addEventListener("change", (ev) => {
 
 document.addEventListener("input", (ev) => {
   if (ev.target.form?.id === "day-form") previewDay(ev.target);
+  if (ev.target.form?.id === "pick-name-form" && S.pick) S.pick.name = ev.target.value;
 });
 
 document.addEventListener("submit", async (ev) => {
   const f = ev.target;
   ev.preventDefault();
   if (f.id === "join-form") submitJoin(f);
-  else if (f.id === "join-personal-form") submitJoinPersonal(f);
+  else if (f.id === "pick-name-form") {
+    const name = f.name.value.trim();
+    if (!name) { toast("이름을 적어 주세요."); return; }
+    S.pick.name = name;
+    pickGo(1);
+  }
   else if (f.id === "recover-form") submitRecover(f);
   else if (f.id === "day-form") saveDay(f);
   else if (f.id === "bulk-form") saveBulk(f);

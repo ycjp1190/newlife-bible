@@ -4,11 +4,12 @@
   "type": "module",
   "scripts": {
     "plan": "node scripts/build-plan.mjs",
+    "mcheyne": "node scripts/build-mcheyne.mjs",
     "vapid": "node scripts/gen-vapid.mjs",
     "test": "node --test tests/*.test.mjs",
     "db:local": "wrangler d1 execute malsseum --local --file schema.sql && wrangler d1 execute malsseum --local --file data/seed.sql",
     "db:remote": "wrangler d1 execute malsseum --remote --file schema.sql && wrangler d1 execute malsseum --remote --file data/seed.sql",
-    "db:personal:remote": "wrangler d1 execute malsseum-personal --env personal --remote --file schema-personal.sql && wrangler d1 execute malsseum-personal --env personal --remote --file data/seed.sql",
+    "db:personal:remote": "wrangler d1 execute malsseum-personal --env personal --remote --file schema-personal.sql && wrangler d1 execute malsseum-personal --env personal --remote --file data/seed.sql && wrangler d1 migrations apply malsseum-personal --env personal --remote",
     "dev": "deno run -A scripts/local-server.mjs",
     "dev:personal": "deno run -A scripts/local-server.mjs personal",
     "deploy": "wrangler deploy && wrangler deploy --env personal"

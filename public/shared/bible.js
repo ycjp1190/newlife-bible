@@ -53,8 +53,12 @@ export function resolveBook(name) {
   return null;
 }
 
-// 장 하나의 고유 키. 체크 기록에 사용한다. 예: "로마서 1"
-export const chapterKey = ([book, ch]) => `${book} ${ch}`;
+// 읽기 항목: [책, 장] 또는 [책, 시작 장, 표시 이름] (맥체인처럼 절 단위·여러 장 묶음일 때. 예: ["출애굽기", 12, "12:29–51"])
+// 장 하나의 고유 키. 체크 기록에 사용한다. 예: "로마서 1", "출애굽기 12:29–51"
+export const chapterKey = ([book, ch, label]) => (label ? `${book} ${label}` : `${book} ${ch}`);
+
+// 체크박스에 보일 이름. 예: "로마서 1장", "출애굽기 12:29–51"
+export const itemLabel = ([book, ch, label]) => (label ? `${book} ${label}` : `${book} ${ch}장`);
 
 // 하루 분량의 PART = 그날 첫 장의 PART (로드맵 PDF와 같은 규칙)
 export function partOf(chapters) {
@@ -66,13 +70,14 @@ export function partOf(chapters) {
 export function formatChapters(chapters) {
   if (!chapters || !chapters.length) return "쉬는 날";
   const groups = [];
-  for (const [book, ch] of chapters) {
+  for (const [book, ch, label] of chapters) {
     const last = groups[groups.length - 1];
-    if (last && last.book === book && last.to === ch - 1) last.to = ch;
+    if (label) groups.push({ text: `${book} ${label}` });
+    else if (last && !last.text && last.book === book && last.to === ch - 1) last.to = ch;
     else groups.push({ book, from: ch, to: ch });
   }
   return groups
-    .map((g) => (g.from === g.to ? `${g.book} ${g.from}장` : `${g.book} ${g.from}–${g.to}장`))
+    .map((g) => g.text || (g.from === g.to ? `${g.book} ${g.from}장` : `${g.book} ${g.from}–${g.to}장`))
     .join(" · ");
 }
 
@@ -105,8 +110,8 @@ export function validChapters(chapters) {
   if (!Array.isArray(chapters) || chapters.length > 200) return false;
   return chapters.every(
     (c) =>
-      Array.isArray(c) && c.length === 2 && BOOKS[c[0]] &&
-      Number.isInteger(c[1]) && c[1] >= 1 && c[1] <= BOOKS[c[0]].chapters,
+      Array.isArray(c) && (c.length === 2 || (c.length === 3 && typeof c[2] === "string" && c[2].length <= 30)) &&
+      BOOKS[c[0]] && Number.isInteger(c[1]) && c[1] >= 1 && c[1] <= BOOKS[c[0]].chapters,
   );
 }
 

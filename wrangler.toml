@@ -46,6 +46,8 @@ run_worker_first = ["/", "/index.html", "/api/*", "/personal/*", "/icons/*", "/m
 binding = "DB"
 database_name = "malsseum-personal"
 database_id = "7fe7c2d9-2cee-4944-b236-51c74dfc9507"
+# 표 구조 변경 파일. 배포 때 GitHub Actions 가 `wrangler d1 migrations apply` 로 차례로 적용한다.
+migrations_dir = "migrations-personal"
 
 [env.personal.triggers]
 crons = ["*/5 * * * *"]

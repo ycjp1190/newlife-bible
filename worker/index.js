@@ -7,8 +7,11 @@
 // - 모임 모드(기본): 초대 코드로 입장, 시작일·읽기표를 모두가 함께 씀 (schema.sql)
 // - 개인 모드(MODE=personal): 코드 없이 시작, 사람마다 시작일·읽기표가 따로 (schema-personal.sql)
 import {
-  formatChapters, kstTime, kstToday, parseChapters, validChapters,
+  dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
 } from "../public/shared/bible.js";
+import {
+  buildPlan, isFixed, isRoadmap, mcheyneDays, mcheyneYearLength, ROADMAPS,
+} from "../public/shared/roadmaps.js";
 import { buildMessage, dueSlots, progress, SLOTS } from "./logic.js";
 import { b64urlEncode, sendPush } from "./push.js";
 
@@ -92,18 +95,52 @@ function setDayStmt(env, me, day, chapters) {
 }
 
 async function replacePlan(env, me, plan, extra) {
-  const stmts = [isPersonal(env)
-    ? env.DB.prepare("DELETE FROM member_plan WHERE member_id = ?").bind(me.id)
-    : env.DB.prepare("DELETE FROM plan_days")];
   for (const d of plan) {
     if (!validChapters(d.chapters)) throw new HttpError(400, `DAY ${d.day} 범위가 올바르지 않아요.`);
-    const chapters = JSON.stringify(d.chapters);
-    stmts.push(isPersonal(env)
-      ? env.DB.prepare("INSERT INTO member_plan (member_id, day, chapters) VALUES (?, ?, ?)").bind(me.id, d.day, chapters)
-      : env.DB.prepare("INSERT INTO plan_days (day, chapters) VALUES (?, ?)").bind(d.day, chapters));
+  }
+  if (isPersonal(env)) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM member_plan WHERE member_id = ?").bind(me.id),
+      insertPlanStmt(env, me.id, plan, 1),
+      ...extra,
+    ]);
+    return;
+  }
+  const stmts = [env.DB.prepare("DELETE FROM plan_days")];
+  for (const d of plan) {
+    stmts.push(env.DB.prepare("INSERT INTO plan_days (day, chapters) VALUES (?, ?)").bind(d.day, JSON.stringify(d.chapters)));
   }
   await env.DB.batch([...stmts, ...extra]);
 }
+
+// 개인 모드: 읽기표 여러 날을 쿼리 한 번으로 넣는다. firstDay 부터 차례로 DAY 번호를 붙인다.
+function insertPlanStmt(env, memberId, plan, firstDay) {
+  return env.DB.prepare(
+    "INSERT INTO member_plan (member_id, day, chapters) SELECT ?, key + ?, value FROM json_each(?)",
+  ).bind(memberId, firstDay, JSON.stringify(plan.map((d) => d.chapters)));
+}
+
+// 맥체인: 남은 날이 14일 아래로 줄면 다음 1년치를 덧붙인다 (1년 뒤에도 계속 읽도록)
+async function ensureMcheyneHorizon(env, me, today = kstToday()) {
+  if (!isPersonal(env) || me.roadmap !== "mcheyne") return;
+  const row = await env.DB.prepare("SELECT MAX(day) AS last FROM member_plan WHERE member_id = ?").bind(me.id).first();
+  const last = row?.last || 0;
+  if (dayIndex(me.start_date, today) <= last - 14) return;
+  const endDate = new Date(Date.parse(me.start_date + "T00:00:00Z") + last * 86400000).toISOString().slice(0, 10);
+  const more = mcheyneDays(me.start_date, last + 1, last + mcheyneYearLength(endDate));
+  await insertPlanStmt(env, me.id, more, last + 1).run();
+}
+
+// 개인 모드 계획 선택값 검사 → { roadmap, perDay, startDate }
+function checkPlanChoice(body) {
+  const roadmap = body.roadmap ?? "flow397";
+  if (!isRoadmap(roadmap)) throw new HttpError(400, "읽기 로드맵을 골라 주세요.");
+  const perDay = isFixed(roadmap) ? 4 : Number(body.per_day ?? 3);
+  if (!Number.isInteger(perDay) || perDay < 1 || perDay > 10) throw new HttpError(400, "하루 분량은 1–10장 사이로 골라 주세요.");
+  return { roadmap, perDay, startDate: checkDate(body.start_date) };
+}
+
+const planText = (roadmap, perDay) => (isFixed(roadmap) ? ROADMAPS[roadmap].name : `${ROADMAPS[roadmap].name} · 하루 ${perDay}장`);
 
 async function getStartDate(env, me) {
   if (isPersonal(env)) return me.start_date;
@@ -122,8 +159,8 @@ function setStartDateStmt(env, me, value) {
 function historyStmt(env, me, kind, day, before, after, note = null) {
   return isPersonal(env)
     ? env.DB.prepare(
-      "INSERT INTO history (member_id, kind, day, before_value, after_value, member_name, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    ).bind(me.id, kind, day, before, after, me.name, note, nowIso())
+      "INSERT INTO history (member_id, plan_version, kind, day, before_value, after_value, member_name, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(me.id, me.plan_version, kind, day, before, after, me.name, note, nowIso())
     : env.DB.prepare(
       "INSERT INTO history (kind, day, before_value, after_value, member_name, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ).bind(kind, day, before, after, me.name, note, nowIso());
@@ -131,9 +168,15 @@ function historyStmt(env, me, kind, day, before, after, note = null) {
 
 // Map<memberId, Map<day, Set<chapterKey>>>
 async function loadChecks(env, memberId = null) {
-  const stmt = memberId === null
-    ? env.DB.prepare("SELECT member_id, day, chapter FROM checks")
-    : env.DB.prepare("SELECT member_id, day, chapter FROM checks WHERE member_id = ?").bind(memberId);
+  const current = "SELECT c.member_id, c.day, c.chapter FROM checks c JOIN members m ON m.id = c.member_id AND c.plan_version = m.plan_version";
+  let stmt;
+  if (isPersonal(env)) {
+    stmt = memberId === null ? env.DB.prepare(current) : env.DB.prepare(`${current} WHERE c.member_id = ?`).bind(memberId);
+  } else {
+    stmt = memberId === null
+      ? env.DB.prepare("SELECT member_id, day, chapter FROM checks")
+      : env.DB.prepare("SELECT member_id, day, chapter FROM checks WHERE member_id = ?").bind(memberId);
+  }
   const { results } = await stmt.all();
   const byMember = new Map();
   for (const r of results) {
@@ -218,6 +261,7 @@ async function handleApi(request, env, url) {
   const me = await authMember(request, env);
 
   if (path === "/state" && method === "GET") {
+    await ensureMcheyneHorizon(env, me);
     const [plan, startDate, checks] = await Promise.all([
       loadPlan(env, me), getStartDate(env, me), loadChecks(env, me.id),
     ]);
@@ -225,6 +269,8 @@ async function handleApi(request, env, url) {
     for (const [day, set] of checks.get(me.id) || []) mine[day] = [...set];
     return json({
       mode: isPersonal(env) ? "personal" : "group",
+      roadmap: isPersonal(env) ? me.roadmap : "flow397",
+      perDay: isPersonal(env) ? me.per_day : 3,
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
     });
@@ -235,7 +281,13 @@ async function handleApi(request, env, url) {
     if (!Number.isInteger(day) || typeof chapter !== "string" || chapter.length > 40) {
       throw new HttpError(400, "잘못된 체크 요청이에요.");
     }
-    if (checked) {
+    if (isPersonal(env)) {
+      await (checked
+        ? env.DB.prepare("INSERT OR IGNORE INTO checks (member_id, plan_version, day, chapter, checked_at) VALUES (?, ?, ?, ?, ?)")
+          .bind(me.id, me.plan_version, day, chapter, nowIso())
+        : env.DB.prepare("DELETE FROM checks WHERE member_id = ? AND plan_version = ? AND day = ? AND chapter = ?")
+          .bind(me.id, me.plan_version, day, chapter)).run();
+    } else if (checked) {
       await env.DB.prepare("INSERT OR IGNORE INTO checks (member_id, day, chapter, checked_at) VALUES (?, ?, ?, ?)")
         .bind(me.id, day, chapter, nowIso()).run();
     } else {
@@ -264,6 +316,27 @@ async function handleApi(request, env, url) {
         };
       }),
     });
+  }
+
+  const fixedPlan = isPersonal(env) && isFixed(me.roadmap);
+  if (fixedPlan && ((path.startsWith("/plan/") && path !== "/plan/choose") || path === "/settings" || /^\/history\/\d+\/revert$/.test(path))) {
+    throw new HttpError(403, "맥체인 읽기표는 바꿀 수 없어요. 설정의 '계획 바꾸기'를 이용해 주세요.");
+  }
+
+  // 개인 모드: 읽기 계획(로드맵·하루 분량·시작일) 바꾸기. 새 계획으로 DAY 1 부터 다시 시작, 이전 체크는 보관.
+  if (path === "/plan/choose" && method === "PUT" && isPersonal(env)) {
+    const { roadmap, perDay, startDate } = checkPlanChoice(await readBody(request));
+    const version = me.plan_version + 1;
+    const next = { ...me, roadmap, per_day: perDay, start_date: startDate, plan_version: version };
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM member_plan WHERE member_id = ?").bind(me.id),
+      insertPlanStmt(env, me.id, buildPlan(roadmap, perDay, startDate), 1),
+      env.DB.prepare("UPDATE members SET roadmap = ?, per_day = ?, start_date = ?, plan_version = ? WHERE id = ?")
+        .bind(roadmap, perDay, startDate, version, me.id),
+      historyStmt(env, next, "plan", null,
+        `${planText(me.roadmap, me.per_day)} (${me.start_date} 시작)`, `${planText(roadmap, perDay)} (${startDate} 시작)`),
+    ]);
+    return json({ ok: true });
   }
 
   // 하루 범위 수정
@@ -298,7 +371,8 @@ async function handleApi(request, env, url) {
   if (path === "/history" && method === "GET") {
     const cols = "id, kind, day, before_value, after_value, member_name, note, created_at";
     const stmt = isPersonal(env)
-      ? env.DB.prepare(`SELECT ${cols} FROM history WHERE member_id = ? ORDER BY id DESC LIMIT 100`).bind(me.id)
+      ? env.DB.prepare(`SELECT ${cols} FROM history WHERE member_id = ? AND plan_version = ? ORDER BY id DESC LIMIT 100`)
+        .bind(me.id, me.plan_version)
       : env.DB.prepare(`SELECT ${cols} FROM history ORDER BY id DESC LIMIT 100`);
     const { results } = await stmt.all();
     return json({ history: results.map(describeHistory) });
@@ -307,7 +381,10 @@ async function handleApi(request, env, url) {
   const revertMatch = path.match(/^\/history\/(\d+)\/revert$/);
   if (revertMatch && method === "POST") {
     const h = await env.DB.prepare("SELECT * FROM history WHERE id = ?").bind(Number(revertMatch[1])).first();
-    if (!h || (isPersonal(env) && h.member_id !== me.id)) throw new HttpError(404, "변경 기록을 찾지 못했어요.");
+    if (!h || (isPersonal(env) && (h.member_id !== me.id || h.plan_version !== me.plan_version))) {
+      throw new HttpError(404, "변경 기록을 찾지 못했어요.");
+    }
+    if (h.kind === "plan") throw new HttpError(409, "계획 바꾸기는 되돌릴 수 없어요. '계획 바꾸기'로 다시 골라 주세요.");
     const note = `#${h.id} 되돌리기`;
     if (h.kind === "day") {
       const row = await getDayRow(env, me, h.day);
@@ -416,23 +493,23 @@ async function joinGroup(request, env) {
 
 // 개인 모드 시작 (이름 + 시작일). 기본 읽기표를 복사해 나만의 읽기표를 만든다.
 async function joinPersonal(request, env) {
-  const { name, start_date } = await readBody(request);
-  const n = cleanName(name);
-  checkDate(start_date);
+  const body = await readBody(request);
+  const n = cleanName(body.name);
+  // roadmap·per_day 가 없으면(예전 화면) 예수님에서 시작하는 통독 · 하루 3장
+  const { roadmap, perDay, startDate: start_date } = checkPlanChoice(body);
   const token = newToken();
   for (let attempt = 0; ; attempt++) {
     try {
       await env.DB.prepare(
-        "INSERT INTO members (name, token, recovery_code, start_date, created_at) VALUES (?, ?, ?, ?, ?)",
-      ).bind(n, token, newRecoveryCode(), start_date, nowIso()).run();
+        "INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, nowIso()).run();
       break;
     } catch (e) {
       if (attempt >= 3) throw e; // 복구 코드가 우연히 겹치면 다시 만든다
     }
   }
   const me = await env.DB.prepare("SELECT * FROM members WHERE token = ?").bind(token).first();
-  await env.DB.prepare("INSERT INTO member_plan (member_id, day, chapters) SELECT ?, day, chapters FROM plan_days")
-    .bind(me.id).run();
+  await insertPlanStmt(env, me.id, buildPlan(roadmap, perDay, start_date), 1).run();
   return json({ token, member: publicMember(me) });
 }
 
@@ -464,6 +541,8 @@ function describeHistory(h) {
     }
     const days = changed.length > 6 ? `${changed.slice(0, 6).join(", ")} 외 ${changed.length - 6}일` : changed.join(", ");
     summary = `전체 표 편집 (${before.length}일 → ${after.length}일, 바뀐 DAY: ${days || "없음"})`;
+  } else if (h.kind === "plan") {
+    summary = `읽기 계획: ${h.before_value} → ${h.after_value}`;
   } else {
     summary = `시작일: ${h.before_value || "없음"} → ${h.after_value}`;
   }
@@ -512,6 +591,7 @@ async function runNotifications(env, now) {
   for (const m of members) {
     const slots = dueSlots(m, time, sentBy.get(m.id) || new Set());
     if (!slots.length) continue;
+    if (!shared) await ensureMcheyneHorizon(env, m, today);
     const plan = shared ? shared.plan : await loadPlan(env, m);
     const startDate = shared ? shared.startDate : m.start_date;
     if (!startDate) continue;
