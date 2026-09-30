@@ -231,3 +231,14 @@ nav.tabs button[aria-current="page"] { color: var(--accent); font-weight: 700; }
 .pick-summary p + p { margin-top: 4px; font-size: 13.5px; }
 .btn.grow { flex: 1; }
 ul.plain { list-style: none; margin: 0; padding: 0; line-height: 1.9; }
+
+/* 축하 효과 */
+canvas.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 40; }
+.done-banner { animation: pop .45s cubic-bezier(.2, 1.4, .4, 1); }
+.streak-line { font-family: var(--sans); font-size: 14px; color: var(--gold); }
+.streak-hint { margin: 12px 0 0; text-align: center; font-size: 14px; color: var(--gold); }
+.chip.done { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.chip.fire { background: var(--gold-soft); color: var(--gold); font-weight: 700; margin-left: 4px; }
+.member .line1 .chips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .done-banner { animation: none; } }

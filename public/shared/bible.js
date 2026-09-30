@@ -155,3 +155,14 @@ export function dateOfDay(startDate, day) {
 export function isDayDone(chapters, checkedKeys) {
   return chapters.every((c) => checkedKeys.has(chapterKey(c)));
 }
+
+// 연속 읽기 일수: 오늘까지(오늘 아직 안 읽었으면 어제까지) 하루도 빠짐없이 다 읽은 날 수
+// isDone(day) → 그날 분량을 다 읽었는가
+export function streakDays(todayDay, total, isDone) {
+  if (!todayDay || todayDay < 1) return 0;
+  let d = Math.min(todayDay, total);
+  if (d === todayDay && !isDone(d)) d--;
+  let n = 0;
+  while (d >= 1 && isDone(d)) { n++; d--; }
+  return n;
+}

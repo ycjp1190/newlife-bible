@@ -1,7 +1,7 @@
 // 실행: deno test -A tests/   또는   node --test tests/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDefaultPlan, dayIndex, formatChapters, parseChapters } from "../public/shared/bible.js";
+import { buildDefaultPlan, dayIndex, formatChapters, parseChapters, streakDays } from "../public/shared/bible.js";
 import { buildMessage, dueSlots, progress } from "../worker/logic.js";
 import { b64urlDecode, b64urlEncode, encryptPayload, generateVapidKeys, vapidJwt } from "../worker/push.js";
 
@@ -100,4 +100,18 @@ test("VAPID 서명 검증", async () => {
   const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, pub, b64urlDecode(s), new TextEncoder().encode(`${h}.${b}`));
   assert.ok(ok);
   assert.equal(JSON.parse(new TextDecoder().decode(b64urlDecode(b))).aud, "https://push.example");
+});
+
+test("연속 읽기 일수", () => {
+  const doneSet = (days) => (d) => days.includes(d);
+  assert.equal(streakDays(5, 397, doneSet([3, 4, 5])), 3); // 오늘까지 3일
+  assert.equal(streakDays(5, 397, doneSet([2, 3, 4])), 3); // 오늘은 아직 → 어제까지 3일
+  assert.equal(streakDays(5, 397, doneSet([1, 2, 4, 5])), 2); // 3일에 끊김
+  assert.equal(streakDays(5, 397, doneSet([1, 2, 3])), 0); // 어제를 놓침
+  assert.equal(streakDays(0, 397, doneSet([])), 0); // 시작 전
+  const plan = [
+    { day: 1, chapters: [["누가복음", 1]] }, { day: 2, chapters: [["누가복음", 2]] }, { day: 3, chapters: [["누가복음", 3]] },
+  ];
+  const checked = new Map([[1, new Set(["누가복음 1"])], [2, new Set(["누가복음 2"])]]);
+  assert.equal(progress(plan, "2026-10-01", "2026-10-03", checked).streak, 2);
 });

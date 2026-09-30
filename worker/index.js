@@ -310,7 +310,7 @@ async function handleApi(request, env, url) {
         return {
           id: m.id, name: m.name, lastSeenAt: m.last_seen_at,
           doneDays: p.doneDays, total: p.total, missedDays: p.missed.length,
-          todayDone: p.todayDone,
+          todayDone: p.todayDone, streak: p.streak,
           todayChecked: p.todayChapters.length - p.todayRemaining.length,
           todayTotal: p.todayChapters.length,
         };

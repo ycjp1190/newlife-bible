@@ -1,7 +1,7 @@
 // 서비스워커: 알림 수신·표시, 알림 누르면 앱 열기, 앱 화면 파일 보관(인터넷이 약할 때 대비)
-const CACHE = "malsseum-v5";
+const CACHE = "malsseum-v6";
 const SHELL = [
-  "/", "/index.html", "/style.css", "/app.js", "/shared/bible.js", "/shared/roadmaps.js", "/shared/mcheyne.js", "/manifest.webmanifest",
+  "/", "/index.html", "/style.css", "/app.js", "/celebrate.js", "/shared/bible.js", "/shared/roadmaps.js", "/shared/mcheyne.js", "/manifest.webmanifest",
   "/icons/icon-192.png", "/icons/apple-touch-icon.png",
 ];
 

@@ -1,7 +1,8 @@
 // "말씀 읽고 새 인생" 앱 화면
 import {
-  chapterKey, dateOfDay, dayIndex, formatChapters, isDayDone, itemLabel, kstToday, parseChapters,
+  chapterKey, dateOfDay, dayIndex, formatChapters, isDayDone, itemLabel, kstToday, parseChapters, streakDays,
 } from "./shared/bible.js";
+import { celebrate } from "./celebrate.js";
 import { daysNeeded, isFixed, PER_DAY_CHOICES, ROADMAP_ORDER, ROADMAPS, sectionLabel } from "./shared/roadmaps.js";
 import { MCHEYNE } from "./shared/mcheyne.js";
 
@@ -74,6 +75,7 @@ const todayDay = () => (S.startDate ? dayIndex(S.startDate, S.today) : null);
 const dayPlan = (day) => S.plan[day - 1];
 const checkedSet = (day) => S.checks.get(day) || new Set();
 const dayDone = (day) => isDayDone(dayPlan(day).chapters, checkedSet(day));
+const streak = () => streakDays(todayDay(), total(), (d) => dayDone(d));
 function missedDays() {
   const t = todayDay();
   if (!t) return [];
@@ -455,7 +457,9 @@ function renderToday() {
       <div class="today-head"><div class="day-no">${fixedPlan() ? `${monthDay(S.today)} <small>본문</small>` : `DAY ${t} <small>/ ${total()}</small>`}</div><span class="chip">${esc(partLabel(d.chapters))}</span></div>
       <p class="passage">${esc(formatChapters(d.chapters))}</p>
       ${checksHtml(t)}
-      ${done ? `<p class="done-banner">오늘 말씀 완료! 🙌</p>` : ""}
+      ${done
+        ? `<p class="done-banner">🎉 오늘 말씀 완료!${streak() >= 2 ? `<br><span class="streak-line">🔥 ${streak()}일 연속으로 읽고 있어요</span>` : ""}</p>`
+        : streak() >= 2 ? `<p class="streak-hint">🔥 ${streak()}일 연속 중 — 오늘도 이어 가요</p>` : ""}
     </div>`;
   }
 
@@ -507,12 +511,16 @@ function renderTogether() {
   else {
     const sorted = [...list].sort((a, b) => a.missedDays - b.missedDays || b.doneDays - a.doneDays || a.name.localeCompare(b.name, "ko"));
     body = sorted.map((m) => {
-      const pct = m.total ? Math.round((m.doneDays / m.total) * 100) : 0;
-      const today = m.todayTotal ? (m.todayDone ? `<span class="chip">오늘 완료</span>` : `<span class="chip gold">오늘 ${m.todayChecked}/${m.todayTotal}</span>`) : "";
+      // 진행률은 항상 소수점 두 자리 (1/397일 = 0.25%), 1일이라도 읽었으면 막대가 보이게
+      const raw = m.total ? (m.doneDays / m.total) * 100 : 0;
+      const pct = raw.toFixed(2);
+      const bar = raw > 0 ? Math.max(raw, 2) : 0;
+      const today = m.todayTotal ? (m.todayDone ? `<span class="chip done">🎉 오늘 완료</span>` : `<span class="chip gold">오늘 ${m.todayChecked}/${m.todayTotal}</span>`) : "";
+      const fire = m.streak >= 2 ? ` <span class="chip fire">🔥 ${m.streak}일</span>` : "";
       const missed = m.missedDays ? `<span class="chip warn">밀린 날 ${m.missedDays}일</span>` : `<span class="chip">밀린 날 없음</span>`;
       return `<div class="member">
-        <div class="line1"><span class="name">${esc(m.name)}${m.id === S.me.id ? ` <span class="me">(나)</span>` : ""}</span><span>${missed} ${today}</span></div>
-        <div class="progress" aria-label="진행률 ${pct}%"><i style="width:${pct}%"></i></div>
+        <div class="line1"><span class="name">${esc(m.name)}${m.id === S.me.id ? ` <span class="me">(나)</span>` : ""}${fire}</span><span class="chips">${missed} ${today}</span></div>
+        <div class="progress" aria-label="진행률 ${pct}%"><i style="width:${bar}%"></i></div>
         <div class="line2"><span>${m.doneDays} / ${m.total}일 완료</span><span>${pct}%</span></div>
       </div>`;
     }).join("");
@@ -762,13 +770,39 @@ async function toggleCheck(btn) {
   checked ? set.add(key) : set.delete(key);
   const nowDone = checked && dayDone(day);
   rerenderKeepingSheet(day);
-  if (nowDone) toast(day === todayDay() ? "오늘 말씀 완료! 🙌" : `DAY ${day} 완료!`);
+  if (nowDone) celebrateDay(day);
   try {
     await api("/check", { method: "POST", body: { day, chapter: key, checked } });
   } catch (e) {
     checked ? set.delete(key) : set.add(key);
     rerenderKeepingSheet(day);
     toast(e.message);
+  }
+}
+
+// 하루 분량을 다 체크했을 때 축하: 1독 완주 > PART(구간) 완독 > 오늘 완료 > 지난 날 완료
+function celebrateDay(day) {
+  if (S.plan.every((d) => dayDone(d.day))) {
+    celebrate("big");
+    toast("🎉 성경 1독 완주! 정말 수고하셨어요");
+    return;
+  }
+  const label = partLabel(dayPlan(day).chapters);
+  if (!fixedPlan() && label) {
+    const sectionDays = S.plan.filter((d) => partLabel(d.chapters) === label);
+    if (sectionDays.every((d) => dayDone(d.day))) {
+      celebrate("big");
+      toast(`🏅 ${label} 완독!`);
+      return;
+    }
+  }
+  if (day === todayDay()) {
+    const s = streak();
+    celebrate("normal");
+    toast(s >= 2 ? `오늘 말씀 완료! 🔥 ${s}일 연속` : "오늘 말씀 완료! 🎉");
+  } else {
+    celebrate("small");
+    toast(`DAY ${day} 완료!`);
   }
 }
 

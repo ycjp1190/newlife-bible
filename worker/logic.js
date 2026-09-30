@@ -1,5 +1,5 @@
 // 진도 계산과 알림 대상 판단 (DB와 무관한 순수 함수 — 테스트하기 쉽게 분리)
-import { chapterKey, dayIndex, formatChapters, isDayDone } from "../public/shared/bible.js";
+import { chapterKey, dayIndex, formatChapters, isDayDone, streakDays } from "../public/shared/bible.js";
 
 export const SLOTS = ["morning", "lunch", "evening"];
 const CATCH_UP_MINUTES = 60; // 서버 예약 실행이 늦어져도 60분 안이면 보낸다
@@ -29,6 +29,7 @@ export function progress(plan, startDate, today, checked) {
     todayChapters: todayPlan ? todayPlan.chapters : [],
     todayRemaining,
     todayDone: todayPlan ? todayRemaining.length === 0 : null,
+    streak: streakDays(todayDay, total, (day) => done(plan[day - 1])),
   };
 }
 
