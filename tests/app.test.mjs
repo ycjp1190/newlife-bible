@@ -115,3 +115,9 @@ test("연속 읽기 일수", () => {
   const checked = new Map([[1, new Set(["누가복음 1"])], [2, new Set(["누가복음 2"])]]);
   assert.equal(progress(plan, "2026-10-01", "2026-10-03", checked).streak, 2);
 });
+
+test("시편은 '편'으로 표시, 입력은 장·편 모두 허용", () => {
+  assert.equal(formatChapters([["시편", 23], ["시편", 24]]), "시편 23–24편");
+  assert.deepEqual(parseChapters("시편 23편").chapters, [["시편", 23]]);
+  assert.deepEqual(parseChapters("시 1-2장").chapters, [["시편", 1], ["시편", 2]]);
+});

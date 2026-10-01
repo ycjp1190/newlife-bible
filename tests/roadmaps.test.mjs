@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BOOKS, buildDefaultPlan, chapterKey, formatChapters, itemLabel } from "../public/shared/bible.js";
-import { buildPlan, chapterSequence, daysNeeded, mcheyneYearLength, sectionLabel } from "../public/shared/roadmaps.js";
+import { buildPlan, chapterSequence, dayOfYear, daysNeeded, readingsOn, sectionLabel, videoOn, yearLength } from "../public/shared/roadmaps.js";
+import { COMMUNITY } from "../public/shared/community.js";
 import { MCHEYNE } from "../public/shared/mcheyne.js";
 import worker from "../worker/index.js";
 import { createLocalDB, personalMigrations } from "../scripts/d1-local.mjs";
@@ -41,11 +42,36 @@ test("맥체인: 날짜별 4곳, 윤년 2월 29일, 절 단위 표시", () => {
   assert.equal(plan.length, 366);
   assert.deepEqual(plan[1].chapters, MCHEYNE["02-29"]);
   assert.equal(buildPlan("mcheyne", 4, "2026-10-01").length, 365);
-  assert.equal(mcheyneYearLength("2027-03-01"), 366);
+  assert.equal(yearLength("2027-03-01"), 366);
   const mar1 = MCHEYNE["03-01"];
   assert.equal(itemLabel(mar1[0]), "출애굽기 12:29–51");
   assert.equal(formatChapters(mar1), "출애굽기 12:29–51 · 누가복음 15장 · 욥기 30장 · 고린도전서 16장");
-  assert.equal(sectionLabel("mcheyne", mar1), "333 · 맥체인");
+  assert.equal(sectionLabel("mcheyne", mar1), "맥체인 성경읽기");
+});
+
+test("333 공동체성경읽기: 1월 1일 = 1일차, 장마다 체크, 영상, 윤년", () => {
+  assert.equal(COMMUNITY.length, 365);
+  assert.deepEqual(readingsOn("community", "2026-01-01"), [["창세기", 1], ["창세기", 2], ["시편", 1]]);
+  // 영상 제목의 날짜와 일치: 24년 7월 31일 = 213일차 (윤년)
+  assert.equal(dayOfYear("2024-07-31"), 213);
+  assert.deepEqual(readingsOn("community", "2024-07-31"), COMMUNITY[212].chapters);
+  assert.equal(itemLabel(COMMUNITY[118].chapters.at(-1)), "시편 119:1–32");
+  // 제목 오류 보정 확인
+  assert.deepEqual(COMMUNITY[81].chapters, [["여호수아", 23], ["여호수아", 24], ["시편", 82]]);
+  assert.deepEqual(COMMUNITY[245].chapters, [["에스겔", 25], ["에스겔", 26], ["에스겔", 27], ["시편", 91]]);
+  assert.equal(COMMUNITY[245].video, "");
+  assert.equal(itemLabel(COMMUNITY[278].chapters.at(-1)), "시편 119:153–176");
+  assert.ok(COMMUNITY[348].chapters.some(([b]) => b === "빌레몬서"));
+  // 윤년 12월 31일(366번째 날)은 본문 없음 = 밀린 읽기 하는 날
+  assert.deepEqual(readingsOn("community", "2028-12-31"), []);
+  // 오늘 시작해도 오늘 날짜 본문부터
+  const plan = buildPlan("community", 3, "2026-10-02");
+  assert.equal(plan.length, 365);
+  assert.deepEqual(plan[0].chapters, COMMUNITY[274].chapters);
+  assert.equal(sectionLabel("community", plan[0].chapters), "333 · 공동체성경읽기");
+  assert.match(videoOn("community", "2026-10-02"), /watch\?v=a0iMFYO4faY&list=/);
+  assert.equal(videoOn("community", "2025-09-03"), null); // 246일차는 영상 없음
+  assert.equal(videoOn("flow397", "2026-10-02"), null);
 });
 
 // ── 개인 모드 API ──
@@ -79,6 +105,17 @@ test("개인 모드: 로드맵·분량을 골라 시작", async () => {
 
   assert.equal((await call("/api/join", { method: "POST", body: { name: "나", start_date: "2026-10-01", roadmap: "없음" } })).status, 400);
   assert.equal((await call("/api/join", { method: "POST", body: { name: "나", start_date: "2026-10-01", per_day: 11 } })).status, 400);
+});
+
+test("개인 모드: 공동체성경읽기도 달력 날짜 본문, 수정 불가", async () => {
+  const call = makeApp(createLocalDB({ mode: "personal" }));
+  const t = await join(call, { roadmap: "community", start_date: "2026-10-02" });
+  const s = (await call("/api/state", { token: t })).data;
+  assert.equal(s.roadmap, "community");
+  assert.deepEqual(s.plan[0].chapters, COMMUNITY[274].chapters);
+  assert.equal((await call("/api/plan/day/1", { method: "PUT", body: { text: "창세기 1장" }, token: t })).status, 403);
+  await call("/api/check", { method: "POST", token: t, body: { day: 1, chapter: "시편 119:33–64", checked: true } });
+  assert.deepEqual((await call("/api/state", { token: t })).data.checks, { 1: ["시편 119:33–64"] });
 });
 
 test("개인 모드: 맥체인은 달력 날짜 본문, 수정 불가, 1년 뒤 자동 연장", async () => {

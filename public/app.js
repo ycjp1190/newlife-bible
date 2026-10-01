@@ -3,8 +3,9 @@ import {
   chapterKey, dateOfDay, dayIndex, formatChapters, isDayDone, itemLabel, kstToday, parseChapters, streakDays,
 } from "./shared/bible.js";
 import { celebrate } from "./celebrate.js";
-import { daysNeeded, isFixed, PER_DAY_CHOICES, ROADMAP_ORDER, ROADMAPS, sectionLabel } from "./shared/roadmaps.js";
-import { MCHEYNE } from "./shared/mcheyne.js";
+import {
+  dayOfYear, daysNeeded, isFixed, PER_DAY_CHOICES, readingsOn, ROADMAP_ORDER, ROADMAPS, sectionLabel, videoOn,
+} from "./shared/roadmaps.js";
 
 // ── 기본 도구 ─────────────────────────────────────────
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -332,12 +333,12 @@ function pickerHtml() {
   }
   // mcstart: 맥체인은 오늘 날짜 본문부터
   const today = kstToday();
-  const readings = MCHEYNE[today.slice(5)] || [];
+  const readings = readingsOn(p.roadmap, today);
   return `${dots}<p class="pick-q">오늘 날짜 본문부터 시작해요</p>
-    <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS.mcheyne.note)}</p>
-    <div class="pick-summary"><p class="muted" style="margin:0 0 6px">${monthDay(today)} 본문</p>
+    <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS[p.roadmap].name)} · ${esc(ROADMAPS[p.roadmap].note)}</p>
+    <div class="pick-summary"><p class="muted" style="margin:0 0 6px">${monthDay(today)} 본문${p.roadmap === "community" ? ` · ${dayOfYear(today)}일차` : ""}</p>
       <ul class="plain">${readings.map((c) => `<li>${esc(itemLabel(c))}</li>`).join("")}</ul></div>
-    <p class="hint">하루 분량은 맥체인 읽기표대로 정해져 있어 따로 고르지 않아요.${p.context === "change" ? " 지금까지의 체크 기록은 보관돼요." : ""}</p>
+    <p class="hint">하루 분량은 읽기표대로 정해져 있어 따로 고르지 않아요.${p.context === "change" ? " 지금까지의 체크 기록은 보관돼요." : ""}</p>
     <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-submit">${finish}</button></div>`;
 }
 
@@ -434,6 +435,12 @@ function signOut(expired = false) {
   if (expired) toast("다시 입장해 주세요.");
 }
 
+// 공동체성경읽기: 그날 본문 유튜브 영상 버튼
+function videoButton(date) {
+  const url = date && personal() ? videoOn(S.roadmap, date) : null;
+  return url ? `<a class="btn secondary block mt video-btn" href="${esc(url)}" target="_blank" rel="noopener">▶ 오늘 본문 영상 보기</a>` : "";
+}
+
 // ── 화면: 오늘 ────────────────────────────────────────
 function renderToday() {
   const t = todayDay();
@@ -454,9 +461,10 @@ function renderToday() {
     const d = dayPlan(t);
     const done = dayDone(t);
     main = `<div class="card">
-      <div class="today-head"><div class="day-no">${fixedPlan() ? `${monthDay(S.today)} <small>본문</small>` : `DAY ${t} <small>/ ${total()}</small>`}</div><span class="chip">${esc(partLabel(d.chapters))}</span></div>
+      <div class="today-head"><div class="day-no">${fixedPlan() ? `${monthDay(S.today)} <small>${S.roadmap === "community" ? `${dayOfYear(S.today)}일차` : "본문"}</small>` : `DAY ${t} <small>/ ${total()}</small>`}</div><span class="chip">${esc(partLabel(d.chapters))}</span></div>
       <p class="passage">${esc(formatChapters(d.chapters))}</p>
       ${checksHtml(t)}
+      ${videoButton(S.today)}
       ${done
         ? `<p class="done-banner">🎉 오늘 말씀 완료!${streak() >= 2 ? `<br><span class="streak-line">🔥 ${streak()}일 연속으로 읽고 있어요</span>` : ""}</p>`
         : streak() >= 2 ? `<p class="streak-hint">🔥 ${streak()}일 연속 중 — 오늘도 이어 가요</p>` : ""}
@@ -594,7 +602,7 @@ function renderSettings() {
     ${personal() ? `<h2 class="section">읽기 계획</h2>
     <div class="card">
       <p style="margin:0 0 4px"><b>${esc(ROADMAPS[S.roadmap]?.name || "")}</b></p>
-      <p class="muted" style="margin:0 0 12px">${fixedPlan() ? `달력 날짜 기준 · 하루 4곳 · ${niceDate(S.startDate, true)} 시작` : `하루 ${S.perDay}장 · ${total()}일 · ${niceDate(S.startDate, true)} 시작`}</p>
+      <p class="muted" style="margin:0 0 12px">${fixedPlan() ? `${ROADMAPS[S.roadmap].summary} · ${niceDate(S.startDate, true)} 시작` : `하루 ${S.perDay}장 · ${total()}일 · ${niceDate(S.startDate, true)} 시작`}</p>
       <button class="btn secondary block" data-action="plan-change">계획 바꾸기</button>
     </div>` : ""}
 
@@ -643,8 +651,9 @@ function openDay(day) {
   if (fixedPlan()) {
     openSheet(`
       <h3>${S.startDate ? monthDay(dateOfDay(S.startDate, day)) : ""} 본문</h3>
-      <p class="muted" style="margin:0 0 14px">${date} · 333 · 맥체인</p>
-      <div id="day-checks">${checksHtml(day)}</div>`);
+      <p class="muted" style="margin:0 0 14px">${date} · ${esc(partLabel(d.chapters))}</p>
+      <div id="day-checks">${checksHtml(day)}</div>
+      ${videoButton(S.startDate ? dateOfDay(S.startDate, day) : null)}`);
     return;
   }
   openSheet(`

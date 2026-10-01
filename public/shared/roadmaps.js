@@ -2,9 +2,12 @@
 // - flow397 : 예수님에서 시작하는 통독 (397일 로드맵의 순서, 모임용 기본값)
 // - gospelA : 복음서가 문을 여는 통독 (성경통독 로드맵 A)
 // - chrono  : 시간 순서 통독 (성경통독 로드맵 B)
-// - mcheyne : 333 맥체인 성경읽기 (달력 날짜 기준, 하루 4곳, 수정 불가)
+// - community : 333 공동체성경읽기 (365일 플랜, 달력 날짜 기준, 영상 링크, 수정 불가)
+// - mcheyne : 맥체인 성경읽기 (달력 날짜 기준, 하루 4곳, 수정 불가)
+// community·mcheyne 는 '달력형'(fixed): 1월 1일부터 날짜별 본문이 정해져 있고 읽기표를 바꿀 수 없다.
 import { BOOKS, PARTS, chapterKey } from "./bible.js";
 import { MCHEYNE } from "./mcheyne.js";
+import { COMMUNITY, COMMUNITY_PLAYLIST } from "./community.js";
 
 const TOTAL_CHAPTERS = 1189;
 const DAY_MS = 86400000;
@@ -58,17 +61,28 @@ export const ROADMAPS = {
     sections: CHRONO,
     label: (n, title) => `시대 ${n} · ${title}`,
   },
+  community: {
+    id: "community",
+    name: "333 공동체성경읽기",
+    icon: "users",
+    fixed: true,
+    intro: "333 경건운동은 하루 성경 3장, 일주일에 새벽기도 3번, 복음 전하기 3번을 실천하는 운동이에요. 이 모드는 그중 '하루 성경 3장'을 공동체성경읽기 365일 플랜에 따라 함께 읽도록 도와요. 매일 성경 몇 장과 시편 1편을 읽어 1년에 성경 전체를 읽고, 그날 본문 영상도 볼 수 있어요.",
+    forWhom: "달력 날짜 기준 · 오늘 본문 영상 · 수정 불가",
+    note: "달력 날짜 기준(1월 1일 = 1일차)이라 오늘 날짜의 본문부터 시작하고, 읽기표는 바꿀 수 없어요.",
+    summary: "달력 날짜 기준 · 성경 몇 장 + 시편 1편",
+  },
   mcheyne: {
     id: "mcheyne",
-    name: "333 맥체인 성경읽기",
+    name: "맥체인 성경읽기",
     icon: "calendar",
     fixed: true,
-    intro: "333 경건운동은 하루 성경 3장, 일주일에 새벽기도 3번, 복음 전하기 3번을 실천하는 운동이에요. 이 모드는 그중 '하루 성경 3장 이상'을 맥체인 성경읽기표에 따라 읽도록 도와요. 매일 4곳을 읽어 1년에 구약은 한 번, 신약과 시편은 두 번 읽게 돼요.",
-    forWhom: "달력 날짜 기준 · 읽기표 수정 불가",
+    intro: "맥체인 성경읽기표에 따라 매일 4곳을 읽어요. 1년에 구약은 한 번, 신약과 시편은 두 번 읽게 돼요.",
+    forWhom: "달력 날짜 기준 · 하루 4곳 · 수정 불가",
     note: "달력 날짜 기준이라 오늘 날짜의 본문부터 시작하고, 읽기표는 바꿀 수 없어요.",
+    summary: "달력 날짜 기준 · 하루 4곳",
   },
 };
-export const ROADMAP_ORDER = ["flow397", "gospelA", "chrono", "mcheyne"];
+export const ROADMAP_ORDER = ["flow397", "gospelA", "chrono", "community", "mcheyne"];
 export const PER_DAY_CHOICES = [1, 2, 3, 4, 5, 7, 10];
 export const isRoadmap = (id) => Object.hasOwn(ROADMAPS, id);
 export const isFixed = (id) => !!ROADMAPS[id]?.fixed;
@@ -92,18 +106,34 @@ export const daysNeeded = (id, perDay) => (isFixed(id) ? 365 : Math.ceil(TOTAL_C
 
 const addDays = (date, n) => new Date(Date.parse(date + "T00:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
 
-// 맥체인: 시작일(1일차)부터 fromDay~toDay 일차의 날짜별 본문
-export function mcheyneDays(startDate, fromDay, toDay) {
+// 1월 1일 = 1
+export const dayOfYear = (date) => Math.round((Date.parse(date + "T00:00:00Z") - Date.parse(date.slice(0, 4) + "-01-01T00:00:00Z")) / DAY_MS) + 1;
+
+// 달력형 로드맵의 그 날짜 본문
+// - 맥체인: 월-일로 찾음 (2월 29일은 윤년에만 있는 추가 분량)
+// - 공동체성경읽기: 1월 1일 = 1일차. 윤년의 366번째 날(12월 31일)은 본문 없음 = 밀린 읽기 하는 날
+export function readingsOn(id, date) {
+  if (id === "mcheyne") return MCHEYNE[date.slice(5)] || [];
+  if (id === "community") return COMMUNITY[dayOfYear(date) - 1]?.chapters || [];
+  return [];
+}
+
+// 공동체성경읽기 그 날짜의 유튜브 영상 주소 (없으면 null)
+export function videoOn(id, date) {
+  if (id !== "community") return null;
+  const v = COMMUNITY[dayOfYear(date) - 1]?.video;
+  return v ? `https://www.youtube.com/watch?v=${v}&list=${COMMUNITY_PLAYLIST}` : null;
+}
+
+// 달력형: 시작일(1일차)부터 fromDay~toDay 일차의 날짜별 본문
+export function fixedDays(id, startDate, fromDay, toDay) {
   const days = [];
-  for (let d = fromDay; d <= toDay; d++) {
-    const date = addDays(startDate, d - 1);
-    days.push({ day: d, chapters: MCHEYNE[date.slice(5)] });
-  }
+  for (let d = fromDay; d <= toDay; d++) days.push({ day: d, chapters: readingsOn(id, addDays(startDate, d - 1)) });
   return days;
 }
 
-// 맥체인 1년치 일수: 시작일부터 1년 뒤 같은 날 전날까지 (윤년 2월 29일 포함)
-export function mcheyneYearLength(startDate) {
+// 달력형 1년치 일수: 시작일부터 1년 뒤 같은 날 전날까지 (윤년이면 366)
+export function yearLength(startDate) {
   const next = String(Number(startDate.slice(0, 4)) + 1) + startDate.slice(4);
   const end = startDate.slice(5) === "02-29" ? next.slice(0, 5) + "03-01" : next;
   return Math.round((Date.parse(end + "T00:00:00Z") - Date.parse(startDate + "T00:00:00Z")) / DAY_MS);
@@ -111,7 +141,7 @@ export function mcheyneYearLength(startDate) {
 
 // 읽기표 만들기 → [{ day, chapters }]
 export function buildPlan(id, perDay, startDate) {
-  if (id === "mcheyne") return mcheyneDays(startDate, 1, mcheyneYearLength(startDate));
+  if (isFixed(id)) return fixedDays(id, startDate, 1, yearLength(startDate));
   const seq = chapterSequence(id);
   const days = [];
   for (let i = 0; i < seq.length; i += perDay) {
@@ -124,7 +154,8 @@ export function buildPlan(id, perDay, startDate) {
 const sectionMaps = {};
 export function sectionLabel(id, chapters) {
   if (!chapters || !chapters.length) return "쉬는 날";
-  if (id === "mcheyne") return "333 · 맥체인";
+  if (id === "mcheyne") return "맥체인 성경읽기";
+  if (id === "community") return "333 · 공동체성경읽기";
   const rm = ROADMAPS[id] || ROADMAPS.flow397;
   if (!sectionMaps[rm.id]) {
     sectionMaps[rm.id] = new Map(chapterSequence(rm.id).map((s) => [chapterKey(s.item), s.section]));

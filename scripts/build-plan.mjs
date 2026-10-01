@@ -25,7 +25,7 @@ const pdf = (hasPdf ? readFileSync(pdfPath, "utf8") : "")
 const checklistStart = pdf.indexOf("DAY 1–397");
 let cursor = checklistStart;
 for (const d of hasPdf ? plan : []) {
-  const text = formatChapters(d.chapters);
+  const text = formatChapters(d.chapters).replace(/(시편 [\d–]+)편/g, "$1장"); // PDF 표기(장)에 맞춰 대조
   const at = pdf.indexOf(text, cursor);
   if (at < 0) { errors.push(`DAY ${d.day} "${text}" 를 PDF 순서에서 찾지 못함`); continue; }
   cursor = at + text.length;

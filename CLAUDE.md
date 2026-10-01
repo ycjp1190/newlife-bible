@@ -28,8 +28,9 @@
 | `public/sw.js` | 서비스워커: 푸시 알림 표시, 알림 누르면 앱 열기, 오프라인 보관 |
 | `public/manifest.webmanifest`, `public/icons/` | 앱 이름·아이콘 (홈 화면 설치용) |
 | `public/shared/bible.js` | 성경 책·장 수·PART, 범위 글 해석/표기, 한국 시간 날짜 계산 — **화면과 서버가 같이 씀**. 읽기 항목은 `[책, 장]` 또는 `[책, 시작장, 표시이름]`(맥체인 절 단위) |
-| `public/shared/roadmaps.js` | 읽기 로드맵 4가지(flow397 예수님에서 시작 / gospelA 복음서가 문을 여는 / chrono 시간 순서 / mcheyne 333 맥체인)와 읽기표 만들기 `buildPlan` |
+| `public/shared/roadmaps.js` | 읽기 로드맵 5가지(flow397 예수님에서 시작 / gospelA 복음서가 문을 여는 / chrono 시간 순서 / community 333 공동체성경읽기 / mcheyne 맥체인)와 읽기표 만들기 `buildPlan`. community·mcheyne는 달력형(1월 1일 기준, 수정 불가) |
 | `public/shared/mcheyne.js` | 맥체인 날짜별 본문 (`scripts/build-mcheyne.mjs`로 생성 — 직접 고치지 않는다) |
+| `public/shared/community.js` | 333 공동체성경읽기 365일 본문·유튜브 영상 ID. 원본 `data/community-365.txt`(재생목록 제목 그대로)에서 `scripts/build-community.mjs`로 생성 — 제목 오류 보정은 스크립트의 `FIXES` |
 | `worker/index.js` | 서버 API(`/api/*`)와 예약 알림 실행. 모드별 차이는 `isPersonal(env)`와 `loadPlan`·`getStartDate`·`historyStmt` 등 도우미 함수에 모여 있다 |
 | `worker/logic.js` | 진도·밀린 날 계산, 알림 보낼지·문구 판단 (순수 함수) |
 | `worker/push.js` | 웹 푸시 암호화·서명 (외부 라이브러리 없음) |
@@ -49,7 +50,8 @@
    - `wrangler.toml`의 이름·데이터베이스·예약 주기·`VAPID_PUBLIC_KEY` (바꾸면 모든 사람의 알림이 끊긴다)
    - `worker/push.js` (알림 암호화)
    - `schema.sql`, `schema-personal.sql`, `migrations-personal/`의 기존 파일 (운영 중인 DB 구조. 개인 DB를 바꿔야 하면 새 번호 migration 파일을 추가하고 자동 검사로 기존 사용자 데이터가 유지되는지 확인)
-   - 맥체인(`mcheyne`) 모드는 읽기표 수정 불가가 원칙이다 (서버가 403으로 막음)
+   - 달력형(`community` 333 공동체성경읽기, `mcheyne` 맥체인)은 읽기표 수정 불가가 원칙이다 (서버가 403으로 막음)
+   - 시편은 화면에 "편"으로 표시한다 (`unitOf`)
    - `.github/workflows/deploy.yml`
 5. 비밀값(초대 코드, 알림 비밀키, Cloudflare 토큰)은 **절대** 파일에 적거나 커밋하지 않는다. 이 값들은 Cloudflare와 GitHub 비밀값 보관함에만 있다.
 6. **직접 배포하지 않는다** (`wrangler deploy` 금지). 변경은 새 브랜치 → PR(변경 제안)로 올리고, 저장소 주인이 승인하면 자동 배포된다.

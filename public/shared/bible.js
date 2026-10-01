@@ -58,7 +58,10 @@ export function resolveBook(name) {
 export const chapterKey = ([book, ch, label]) => (label ? `${book} ${label}` : `${book} ${ch}`);
 
 // 체크박스에 보일 이름. 예: "로마서 1장", "출애굽기 12:29–51"
-export const itemLabel = ([book, ch, label]) => (label ? `${book} ${label}` : `${book} ${ch}장`);
+// 장 단위 이름: 시편은 "편", 나머지는 "장"
+export const unitOf = (book) => (book === "시편" ? "편" : "장");
+
+export const itemLabel = ([book, ch, label]) => (label ? `${book} ${label}` : `${book} ${ch}${unitOf(book)}`);
 
 // 하루 분량의 PART = 그날 첫 장의 PART (로드맵 PDF와 같은 규칙)
 export function partOf(chapters) {
@@ -77,7 +80,7 @@ export function formatChapters(chapters) {
     else groups.push({ book, from: ch, to: ch });
   }
   return groups
-    .map((g) => g.text || (g.from === g.to ? `${g.book} ${g.from}장` : `${g.book} ${g.from}–${g.to}장`))
+    .map((g) => g.text || (g.from === g.to ? `${g.book} ${g.from}${unitOf(g.book)}` : `${g.book} ${g.from}–${g.to}${unitOf(g.book)}`))
     .join(" · ");
 }
 
@@ -90,7 +93,7 @@ export function parseChapters(text) {
   const parts = src.split(/[·,/;∬\n]+/).map((s) => s.trim()).filter(Boolean);
   const chapters = [];
   for (const part of parts) {
-    const m = part.match(/^(.+?)\s*(\d+)\s*(?:장)?\s*(?:[-–~]\s*(\d+)\s*(?:장)?)?$/);
+    const m = part.match(/^(.+?)\s*(\d+)\s*(?:장|편)?\s*(?:[-–~]\s*(\d+)\s*(?:장|편)?)?$/);
     if (!m) return { error: `"${part}"를 이해하지 못했어요. 예: 로마서 1–3장` };
     const book = resolveBook(m[1]);
     if (!book) return { error: `"${m[1].trim()}"은(는) 성경 책 이름이 아니에요.` };

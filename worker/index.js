@@ -10,7 +10,7 @@ import {
   dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
 } from "../public/shared/bible.js";
 import {
-  buildPlan, isFixed, isRoadmap, mcheyneDays, mcheyneYearLength, ROADMAPS,
+  buildPlan, fixedDays, isFixed, isRoadmap, ROADMAPS, yearLength,
 } from "../public/shared/roadmaps.js";
 import { buildMessage, dueSlots, progress, SLOTS } from "./logic.js";
 import { b64urlEncode, sendPush } from "./push.js";
@@ -120,14 +120,14 @@ function insertPlanStmt(env, memberId, plan, firstDay) {
   ).bind(memberId, firstDay, JSON.stringify(plan.map((d) => d.chapters)));
 }
 
-// 맥체인: 남은 날이 14일 아래로 줄면 다음 1년치를 덧붙인다 (1년 뒤에도 계속 읽도록)
+// 달력형(공동체성경읽기·맥체인): 남은 날이 14일 아래로 줄면 다음 1년치를 덧붙인다 (1년 뒤에도 계속 읽도록)
 async function ensureMcheyneHorizon(env, me, today = kstToday()) {
-  if (!isPersonal(env) || me.roadmap !== "mcheyne") return;
+  if (!isPersonal(env) || !isFixed(me.roadmap)) return;
   const row = await env.DB.prepare("SELECT MAX(day) AS last FROM member_plan WHERE member_id = ?").bind(me.id).first();
   const last = row?.last || 0;
   if (dayIndex(me.start_date, today) <= last - 14) return;
   const endDate = new Date(Date.parse(me.start_date + "T00:00:00Z") + last * 86400000).toISOString().slice(0, 10);
-  const more = mcheyneDays(me.start_date, last + 1, last + mcheyneYearLength(endDate));
+  const more = fixedDays(me.roadmap, me.start_date, last + 1, last + yearLength(endDate));
   await insertPlanStmt(env, me.id, more, last + 1).run();
 }
 
@@ -320,7 +320,7 @@ async function handleApi(request, env, url) {
 
   const fixedPlan = isPersonal(env) && isFixed(me.roadmap);
   if (fixedPlan && ((path.startsWith("/plan/") && path !== "/plan/choose") || path === "/settings" || /^\/history\/\d+\/revert$/.test(path))) {
-    throw new HttpError(403, "맥체인 읽기표는 바꿀 수 없어요. 설정의 '계획 바꾸기'를 이용해 주세요.");
+    throw new HttpError(403, `${ROADMAPS[me.roadmap].name} 읽기표는 바꿀 수 없어요. 설정의 '계획 바꾸기'를 이용해 주세요.`);
   }
 
   // 개인 모드: 읽기 계획(로드맵·하루 분량·시작일) 바꾸기. 새 계획으로 DAY 1 부터 다시 시작, 이전 체크는 보관.

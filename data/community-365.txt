@@ -1,0 +1,369 @@
+# 공동체성경읽기 365일 읽기 플랜 (유튜브 재생목록 'NEW 365일 읽기 플랜(개역개정)' 제목 그대로)
+# https://www.youtube.com/playlist?list=PLVcVykBcFZTR4Q6cvmybjPgCklZlv-Ghj
+# 형식: 일차<TAB>본문(영상 제목 그대로, 오탈자 포함)<TAB>영상ID   — 제목 오류 보정은 scripts/build-community.mjs 의 FIXES
+# 246일차는 재생목록에 영상이 없음
+1	(창1-2, 시1)	IlUTmc7LCgs
+2	(창3-6, 시2)	6AmljmkX4dg
+3	(창7-11, 시3)	nEZXX7JfFe4
+4	(창12-15, 시4)	Y9T5NxZ16rA
+5	(창16-18, 시5)	zl5Pdwa1ldQ
+6	(창19-20, 시6)	CELX4Iv5Arw
+7	(창21-23, 시7)	X6ptorACGRc
+8	(창24-25, 시8)	R2yaaPsBk0g
+9	(창26-27, 시9)	hJMcKN2yOvQ
+10	(창28-30, 시10)	EskWjK6Fl4k
+11	(창31-33, 시11)	6m_NHeFM5kI
+12	(창34-36, 시12)	dlij5BY1mCM
+13	(창37-39, 시13)	OgFJBpJ6dtM
+14	(창40-41, 시14)	xkANdOCsKvU
+15	(창42-43, 시15)	PiwTop8Z-CQ
+16	(창44-46, 시16)	_Grucry5llw
+17	(창47-48, 시17)	4FcjtQ3qbxU
+18	(창49-50, 시18)	VQ9L3gs9Ojc
+19	(출1-3, 시19)	X6QDNBDDEpw
+20	(출4-6, 시20)	_9Dm9KlwIbY
+21	(출7-9, 시21)	9vgKF9zvljU
+22	(출10-11, 시22)	jYZSUXqAeW4
+23	(출12-13, 시23)	lYaJubWLNAQ
+24	(출14-15, 시24)	AQfCiSiytWw
+25	(출16-18, 시25)	Ph2uLBQSbLI
+26	(출19-21, 시26)	MEc4W0C0Dw8
+27	(출22-24, 시27)	PtWou_454Dc
+28	(출25-27, 시28)	9_5viOf_GLQ
+29	(출28-29, 시29)	zFtT5m_h92k
+30	(출30-32, 시30)	7ZOYUFR2FYg
+31	(출33-35, 시31)	Kl_S-4_11Fg
+32	(출36-38, 시32)	lXuOZySw1SA
+33	(출39-40, 시33)	rGP-vCg8Rzs
+34	(레1-4, 시34)	U0gFmqLXBnQ
+35	(레5-8, 시35)	oqWfNhRSiv0
+36	(레9-11, 시36)	3IOc3A7FBas
+37	(레12-13, 시37)	z8yNS5pefYQ
+38	(레14-15, 시38)	LxfYIdM_vTQ
+39	(레16-18, 시39)	SySgGHLrQvc
+40	(레19-20, 시40)	q1XyHlMBtyQ
+41	(레21-23, 시41)	0jXrjDotSTQ
+42	(레24-25, 시42)	MI8phIBVILM
+43	(레26-27, 시43)	xjBDWDN-AKA
+44	(민1-2, 시44)	kKuL0vXHY1Q
+45	(민3-4, 시45)	lo0QJD1JZAY
+46	(민5-6, 시46)	t-jZRuWhQNE
+47	(민7-8, 시47)	j84kVuOpfmI
+48	(민9-11, 시48)	dS8TC29LHhk
+49	(민12-14, 시49)	cibWv4afbPU
+50	(민15-16, 시50)	J21aHrGBd5s
+51	(민17-19, 시51)	inr8WXt0XSo
+52	(민20-21, 시52)	AGLW8_9S4tk
+53	(민22-23, 시53)	8tgYQQH2vyc
+54	(민24-26, 시54)	Raorjpr6JKs
+55	(민27-29, 시55)	At5Id1J3JIg
+56	(민30-31, 시56)	R1Ihcid3AXA
+57	(민32-33, 시57)	QLDVNDMaPY0
+58	(민34-36, 시58)	1NP6Je0Nuak
+59	(신1-2, 시59)	MxTDKAVvL7A
+60	(신3-4, 시60)	m27kL3b3KlY
+61	(신5-7, 시61)	IOqbWfzojkM
+62	(신8-10, 시62)	U8Hakkb8Dk4
+63	(신11-12, 시63)	teFXD3l_2L4
+64	(신13-15, 시64)	KT0fSIRpqEQ
+65	(신16-18, 시65)	6d45_lhQnto
+66	(신19-20, 시66)	cRlwUCMOSak
+67	(신21-23, 시67)	k6z9t4xXAUQ
+68	(신24-25, 시68)	Y6u9c3pdAiU
+69	(신26-27, 시69)	HvjX4cYbLFQ
+70	(신28, 시70)	vfaGvUxoZhc
+71	(신29-30, 시71)	Q4gXnf-v768
+72	(신31-32, 시72)	u-cg4Ph3LQc
+73	(신33-34, 시73)	Muy_9rj954M
+74	(수1-3, 시74)	bKy-68zf_p0
+75	(수4-6, 시75)	1G2pWBO2atc
+76	(수7-8, 시76)	AuL_J8aV3Jk
+77	(수9-10, 시77)	mXCd8O6XiH0
+78	(수11-12, 시78)	Emh8vrsESRE
+79	(수13-15, 시79)	paJwdp1QPKc
+80	(수16-19, 시80)	7qHMU7v7xqs
+81	(수20-22, 시81)	63zcpUCLM1g
+82	(수-, 시82)	5-p1A1T2KJk
+83	(삿1-2, 시83)	49aqh30iAko
+84	(삿3-5, 시84)	2C_w1SCKvbM
+85	(삿6-7, 시85)	8DrHmjwI6nw
+86	(삿8-9, 시86)	MEI_1fvKrFA
+87	(삿10-12, 시87)	f9uSl8HdoDk
+88	(삿13-15, 시88)	gxxbvbPBIGw
+89	(삿16-17, 시89)	cxP7fuMn5OA
+90	(삿18-19, 시90)	ArBBcuOG1Qo
+91	(삿20-21, 시91)	xRoLxnchhFM
+92	(룻1-2, 시92)	W574a8wxNFA
+93	(룻3-4, 시93)	4731w4ExUpk
+94	(삼상1-2, 시94)	HADo-AdEg-w
+95	(삼상 3-5, 시95)	Djbn1YXrOuY
+96	(삼상6-8, 시96)	74wvDPFB4BI
+97	(삼상9-10, 시97)	KlYhMNhlKkc
+98	(삼상11-13, 시98)	zUEBfyA3vqY
+99	(삼상14-15, 시99)	bzCCnah5Jew
+100	(삼상16-17, 시100)	bV7av1FMwYY
+101	(삼상18-19, 시101)	hQ85nHq_bJ8
+102	(삼상20-21, 시102)	phbE29z-pxI
+103	(삼상22-24, 시103)	viRux0v380A
+104	(삼상25-26, 시104)	eI-a6gztkZU
+105	(삼상27-29, 시105)	BKRrBMjPb0U
+106	(삼상30-31, 시106)	IIxWBCW1OBo
+107	(삼하1-2, 시107)	cpmuxNC-uas
+108	(삼하3-5, 시108)	iFPeC8LEKjM
+109	(삼하6-8, 시109)	lF1SOtSf-_Q
+110	(삼하9-11, 시110)	XhFTJR6GLOs
+111	(삼하12-13, 시111)	_FD3vdwromU
+112	(삼하14-15, 시112)	VXOVw6tWLWA
+113	(삼하16-17, 시113)	1h_c4pnNphk
+114	(삼하18-19, 시114)	M7evgfeJO8w
+115	(삼하20-22, 시115)	IxBgAUUjk40
+116	(삼하23-24, 시116)	c3o6YhFoXWA
+117	(왕상1, 시117)	kGpk33CLRrE
+118	(왕상2-3, 시118)	SIbrE6mLNvo
+119	(왕상4-6, 시119:1-32)	6TE-VJTLdmQ
+120	(왕상7, 시119:33-64)	A9fqv3sUT08
+121	(왕상8, 시119:65-96)	GdG_MMkEVn8
+122	(왕상9-10, 시119:97-128)	a78MOMrCzpc
+123	(왕상11-12, 시119:129-152)	sKU8D2Jvmq8
+124	(왕상13-14, 시119:153-176)	IyqFEFaIYuQ
+125	(왕상15-16, 시120)	55TaW9oB8mE
+126	(왕상17-18, 시121)	dQg1i2_AyZw
+127	(왕상19-20, 시122)	GZkHjEpVbuo
+128	(왕상21-22, 시123)	XAyw2WuxIyo
+129	(왕하1-3, 시124)	L38JFFw9hOM
+130	(왕하4-5, 시125)	ctPM-vMnikQ
+131	(왕하6-8, 시126)	HWvap5VeudA
+132	(왕하9-10, 시127)	vOnwEb7gMCI
+133	(왕하11-13, 시128)	dvH1BkuMJXA
+134	(왕하14-16, 시129)	sU7xzgrsrzk
+135	(왕하17-18, 시130)	tdimHHloHJA
+136	(왕하19-21, 시131)	gwuZn8fIbiU
+137	(왕하22-23, 시132)	vDtaOkiasUA
+138	(왕하24-25, 시133)	gyZMCO9Ouxk
+139	(대상1-3, 시134)	3liy-_NkEKM
+140	(대상4-5, 시135)	5fONlgjSMag
+141	(대상6-7, 시136)	VOXhhjsKVQw
+142	(대상8-10, 시137)	gDcXtfRKa-0
+143	(대상11-13, 시138)	Nh00u2JzJec
+144	(대상14-16, 시139)	dVRjAsZvqx8
+145	(대상17-20, 시140)	LHHVj5bF0Ew
+146	(대상21-24, 시141)	mcJD4yAbhVk
+147	(대상25-27, 시142)	dsdcNKfz6Uk
+148	(대상28-29, 시143)	Goel8e1CBU8
+149	(대하1-4, 시144)	FOBiccEJuJE
+150	(대하5-6, 시145)	HgwYKu6sHL0
+151	(대하7-9, 시146)	PVnvwDkxbQQ
+152	(대하10-12, 시147)	CRdNJBrOIvE
+153	(대하13-15, 시148)	qYNdCpZgL34
+154	(대하16-19, 시149)	dIfiftIJFcc
+155	(대하20-22, 시150)	6d8zosn9PjY
+156	(대하23-25, 시1)	8EWLyKNLGxY
+157	(대하26-28, 시2)	HHgnRbdgUYQ
+158	(대하29-30, 시3)	fxbU4nW_BlU
+159	(대하31-32, 시4)	EWNv8yJ-nqE
+160	(대하33-34, 시5)	9kzZKyuJNzY
+161	(대하35-36, 시6)	ez9DrhB2YEk
+162	(스1-3, 시7)	Kz7Ep_zb67Q
+163	(스4-6, 시8)	75HoNlm02f4
+164	(스7-8, 시9)	iAB09d6VatY
+165	(스9-10, 시10)	Lm0c-msP5_M
+166	(느1-4, 시11)	-0NlRA2UhY4
+167	(느5-7, 시12)	ZyodreKVGVU
+168	(느8-9, 시13)	l_-R6AFbenQ
+169	(느10-11, 시14)	ypGPzZYEwtI
+170	(느12-13, 시15)	EGdwmE13ZPI
+171	(에1-3, 시16)	-3RBH8ST2KM
+172	(에4-7, 시17)	rUOMRTcG6IU
+173	(에8-10, 시18)	7ki84mMsGCs
+174	(욥1-5, 시19)	heGQEYhJGOg
+175	(욥6-9, 시20)	M46a86cL1o8
+176	(욥10-13, 시21)	BZaTL0azJSg
+177	(욥14-16, 시22)	UvE0TDkZNRI
+178	(욥17-21, 시23)	paI3Sa7SCVE
+179	(욥22-27, 시24)	8IG4CnwDE3E
+180	(욥28-30, 시25)	DmcRJRMOIj8
+181	(욥31-33, 시26)	-MMn0aFrz4Q
+182	(욥34-38, 시27)	MAxCIUi9tKA
+183	(욥 39-42, 시 28)	NCfcM1UggFs
+184	(잠 1-5, 시 29)	WXDWkP0HD7w
+185	(잠 6-10, 시 30)	wnJT62ILNVo
+186	(잠 11-14, 시 31)	LYEfVU7r_KQ
+187	(잠 15-18, 시 32)	eTEYOPih1vE
+188	(잠 19-22, 시 33)	6lBYdsDQwao
+189	(잠 23-27, 시 34)	1Fb5TPouhVg
+190	(잠 28-31, 시 35)	j0aT7bLN7sI
+191	(전 1-4, 시 36)	v6JPNAyu0Z0
+192	(전 5-8, 시 37)	4ZUAfc8y5eM
+193	(전 9-12, 시 38)	z5p5ButDGWI
+194	(아 1-4, 시 39)	QYhT823Zg4I
+195	(아 5-8, 시 40)	TospaOS01YY
+196	(사 1-4, 시 41)	8_bSq6n6BvA
+197	(사 5-7, 시 42)	Ehwn_8sn8gU
+198	(사 8-12, 시 43)	jSpYLHDCcr8
+199	(사 13-17, 시 44)	MRjRSmeA3Qc
+200	(사 18-22, 시 45)	Em3uGgNOX9Y
+201	(사 23-27, 시 46)	68jLToraxO8
+202	(사 28-30, 시 47)	swYpde-Lr-8
+203	(사 31-35, 시 48)	5iYy1n6PJDE
+204	(사 36-38, 시 49)	VPpAGdeJOm8
+205	(사 39-41, 시 50)	2ZmZuXDXRkc
+206	(사 42-44, 시 51)	qeBDX26F2u4
+207	(사 45-48, 시 52)	hlrumsQbliY
+208	(사 49-51, 시 53)	m1jK2zvNQMU
+209	(사 52-55, 시 54)	gJQdmiwwMSk
+210	(사 56-59, 시 55)	0V26CLdZlIY
+211	(사 60-63, 시 56)	GH1TBh0aUd0
+212	(사 64-66, 시 57)	y8aDcNeOIj4
+213	(렘 1-3, 시 58)	js0eg1BLAkE
+214	(렘 4-5, 시 59)	g0TlA6V6z1I
+215	(렘 6-7, 시 60)	vtJPAGXk2nk
+216	(렘 8-10, 시 61)	cyV6HDRJuXI
+217	(렘 11-13, 시 62)	cltvyVXIhpM
+218	(렘 14-16, 시 63)	Wpj3EvyNk78
+219	(렘 17-19, 시 64)	RzrK86xmemU
+220	(렘 20-22, 시 65)	nOztAeUSXFg
+221	(렘 23-24, 시 66)	VAz60L4h4kk
+222	(렘 25-26, 시 67)	JOE2w43eDzk
+223	(렘 27-29, 시 68)	p4Myn2KmZRc
+224	(렘 30-31, 시 69)	yIw_l57ecMM
+225	(렘 32-33, 시 70)	gx8f_Z8K2l0
+226	(렘 34-35, 시 71)	Lxw6JPz5mBQ
+227	(렘 36-37, 시 72)	ck8gju_bjCo
+228	(렘 38-40, 시 73)	3YuWO5wkG-c
+229	(렘 41-43, 시 74)	_zaDVVTqVm8
+230	(렘 44-47, 시 75)	8KsJpI1CcbA
+231	(렘 48-49, 시 76)	QViG3gZl2dM
+232	(렘 50, 시 77)	uBYRb2DqOuA
+233	(렘 51, 시 78)	10sKlSGaPdk
+234	(렘 52, 시 79)	roUj6fc5BJc
+235	(애 1-2, 시 80)	bQX5nMoeAcE
+236	(애 3-5, 시 81)	e58m12FG1E0
+237	(겔 1-3, 시 82)	zBUA_Hk2n3s
+238	(겔 4-7, 시 83)	q5dMgMvLdC0
+239	(겔 8-11, 시 84)	5kj4kDsI2zA
+240	(겔 12-14, 시 85)	Ayb21Lq6a5Q
+241	(겔 15-16, 시 86)	d4nya4kXfHk
+242	(겔 17-19, 시 87)	2B1VWm3oZ8I
+243	(겔 20, 시 88)	MBJp_bkeD3o
+244	(겔 21-22, 시 89)	2ROVYng6p9Y
+245	(겔 23-24, 시 90)	OKfEihCnIcQ
+246		
+247	(겔 28-30, 시 92)	0ly6MaEWV2M
+248	(겔 31-32, 시 93)	1IjQ9vplThk
+249	(겔 33-35, 시 94)	zvX-B-J9c20
+250	(겔 36-37, 시 95)	0uoYEl1SDeo
+251	(겔 38-39, 시 96)	JZLRinMrDjY
+252	(겔 40-42, 시 97)	LMQOBnvA3qs
+253	(겔 43-45, 시 98)	PQMfrHZ1VWs
+254	(겔 46-48, 시 99)	drWhXPvE7vQ
+255	(단 1-2, 시 100)	saRuAD4UKUQ
+256	(단 3-4, 시 101)	fDFT2aWWLtA
+257	(단 5-6, 시 102)	pEkvKngjc_w
+258	(단 7-8, 시 103)	k_0TCt0OCds
+259	(단 9-10, 시 104)	HPtWaFSSVz0
+260	(단 11-12, 시 105)	ImGHB6F2Cfo
+261	(호 1-4, 시 106)	ax4EmCKslGA
+262	(호 5-9, 시 107)	2F505MoVoJQ
+263	(호 10-14, 시 108)	3n5-oK_JqxE
+264	(욜 1-3, 시 109)	-R1odZagdBI
+265	(암 1-5, 시 110)	A8_zS9y8s3g
+266	(암 6-9, 시 111)	27FhylcQA6M
+267	(옵 1, 욘 1-4, 시 112)	Kf4kp1Ccomw
+268	(미 1-4, 시 113)	nHvYlRRBjWg
+269	(미 5-7, 시 114)	3P1MFNjvjV0
+270	(나 1-3, 시 115)	JSgbGn2f-Mo
+271	(합 1-3, 시 116)	b86UCNgRDfw
+272	(습 1-3, 학 1-2, 시 117)	4YF4afXnErk
+273	(슥 1-5, 시 118)	U_htjMPuW0s
+274	(슥 6-10, 시 119:1-32)	rd6b2jjWvRU
+275	(슥 11-14, 시 119:33-64)	a0iMFYO4faY
+276	(말 1-4, 시 119:65-96)	zBees3L2Wss
+277	(마 1-4, 시 119:97-128)	mMuoN_vuhpk
+278	(마 5-7, 시 119:129-152)	wYrQ2wq0hoU
+279	(마 8-10, 시 116:153-176)	Q6RUhu7npzc
+280	(마 11-12, 시 120)	A4D6fGlCWDY
+281	(마 13-14, 시 121)	YYnfj4W6KVM
+282	(마 15-17, 시 122)	CDtoDlJG9R8
+283	(마 18-20, 시 123)	YiYJYKHZpUo
+284	(마 21-22, 시 124)	_zq4fPWmS8I
+285	(마 23-24, 시 125)	GOLok99cvXE
+286	(마 25-26, 시 126)	q9DBABV5-ko
+287	(마 27-28, 시 127)	kFpzaJ3WTTA
+288	(막 1-4, 시 128)	84XqrpWI4ko
+289	(막 5-6, 시 129)	3aMtYp9hB64
+290	(막 7-9, 시 130)	bNtnNSzLQgw
+291	(막 10-12, 시 131)	4_RQU66S7hM
+292	(막 13-14, 시 132)	w-7lluAEUOc
+293	(막 15-16, 시 133)	y4HpBUCt8d8
+294	(눅 1-2, 시 134)	IHOvOqkiqsw
+295	(눅 3-4, 시 135)	z9Os49SwI1Q
+296	(눅 5-6, 시 136)	7ES4htqR7rU
+297	(눅 7-8, 시 137)	RvK4C3vs_AI
+298	(눅 9-10, 시 138)	pSelLXtmeM0
+299	(눅 11-12, 시 139)	08gByft7e8c
+300	(눅 13-14, 시 140)	8kASoqhDPes
+301	(눅 15-16, 시 141)	MLxiNxl5r5w
+302	(눅 17-18, 시 142)	EH_s8vlrDb0
+303	(눅 19-20, 시 143)	4N1hqE1QgEE
+304	(눅 21-22, 시 144)	2Ev-v7H-UlE
+305	(눅 23-24, 시 145)	eeHlX4h4jCk
+306	(요 1-3, 시 146)	ieQpbogOkBg
+307	(요 4-5, 시 147)	aOQcAAlngK8
+308	(요 6-7, 시 148)	aTMv5m_i24E
+309	(요 8-9, 시 149)	3UWBfzjdwqE
+310	(요 10-11, 시 150)	uRQMefbwHuI
+311	(요 12-13, 시 1)	2Rek_ZJ82UE
+312	(요 14-16, 시 2)	0XSIg5yWo2I
+313	(요 17-18, 시 3)	B-gkJZYRfLE
+314	(요 19-21, 시 4)	rRmru23oqEI
+315	(행 1-3, 시 5)	Yhq4M-5v9RA
+316	(행 4-6, 시 6)	tZ-TkHeWYmc
+317	(행 7-8, 시 7)	VP23JqGJdYA
+318	(행 9-10, 시 8)	ftGMB-SBhUw
+319	(행 11-13, 시 9)	TBTp1KJjA3k
+320	(행 14-16, 시 10)	1xtXosYmGi0
+321	(행 17-19, 시 11)	Q0ojxYU8whg
+322	(행 20-21, 시 12)	q7GoezV_4nY
+323	(행 22-24, 시 13)	hjGIsO9nn9s
+324	(행 25-26, 시 14)	Y1H89UrYRaI
+325	(행 27-28, 시 15)	oN8TGJ8ZazE
+326	(롬 1-3, 시 16)	PuKUPR3S8i8
+327	(롬 4-7, 시 17)	ldpSEg54OrQ
+328	(롬 8-9, 시 18)	iblGkCy8Vhk
+329	(롬 10-13, 시 19)	hsFT8nD88Ac
+330	(롬 14-16, 시 20)	q9-dPxsvL38
+331	(고전 1-4, 시 21)	ttEl9mCLelY
+332	(고전 5-7, 시 22)	_5U60vMC-NY
+333	(고전 8-11, 시 23)	iCDtE-z_BHo
+334	(고전 12-14, 시 24)	sJeblo2ARcI
+335	(고전 15-16, 시 25)	Jz_O_yxifvU
+336	(고후 1-4, 시 26)	cOYfuhlAirQ
+337	(고후 5-9, 시 27)	PAmf9HZcWJs
+338	(고후 10-13, 시 28)	hWR-QT0jNkY
+339	(갈 1-3, 시 29)	f6Ha7fMEDaE
+340	(갈 4-6, 시 30)	XufOCmy09tk
+341	(엡 1-3, 시 31)	T1OUO7aJDCk
+342	(엡 4-6, 시 32)	3tkwEi7al0c
+343	(빌 1-4, 시 33)	9il6EEBdkkI
+344	(골 1-4, 시 34)	p7_2h9ADsSE
+345	(살전 1-5, 시 35)	9c8AmmksDgc
+346	(살후 1-3, 딤전 1-2, 시 36)	RrqTcRDNHU0
+347	(딤전 3-6, 시 37)	P0ObcF0qDvU
+348	(딤후 1-4, 시 38)	UGuvJGI0KmQ
+349	(딛 1-3, 빌 1, 시 39)	2ezE2DZ4IU4
+350	(히 1-4, 시 40)	P5f83Ij785M
+351	(히 5-8, 시 41)	JVS1QUbG70E
+352	(히 9-10, 시 42)	br0rgk3LoYk
+353	(히 11-13, 시 43)	UgmbxXhnn90
+354	(약 1-3, 시 44)	_m9jAPIeA3w
+355	(약 4-5, 시 45)	1-fFoQ9Aunk
+356	(벧전 1-5, 시 46)	yJ36iIQgtyI
+357	(벧후 1-3, 시 47)	tqrBL4ZH_fY
+358	(요일 1-4, 시 48)	KuyFlYLi-zY
+359	(요일 5, 요이 1, 요삼 1, 유 1, 시 49)	qVWuLvDnupM
+360	(계 1-4, 시 50)	mpdIa0kY_8Q
+361	(계 5-8, 시 51)	6IaTSSonyo4
+362	(계 9-12, 시 52)	-rKC46g6Gi0
+363	(계 13-16, 시 53)	JMdBVB5RDZc
+364	(계 17-19, 시 54)	z9cXitXG4mo
+365	(계 20-22, 시 55)	ytyHinRxtrw
