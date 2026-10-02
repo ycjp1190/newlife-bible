@@ -20,6 +20,8 @@ run_worker_first = ["/api/*", "/personal/*"]
 binding = "DB"
 database_name = "malsseum"
 database_id = "6d176e67-8acb-4e13-ac28-009f9a535e8d"
+# 표 구조 변경 파일. 배포 때 GitHub Actions 가 `wrangler d1 migrations apply` 로 차례로 적용한다.
+migrations_dir = "migrations-group"
 
 # 5분마다 알림 대상 확인
 [triggers]

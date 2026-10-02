@@ -22,6 +22,7 @@ const S = {
   vapid: null, loaded: false, tab: store.get("tab") || "today",
   mode: store.get("mode") || "group", joinView: "new",
   roadmap: "flow397", perDay: 3,
+  chatUnread: 0, chatDraft: "", chat: { msgs: [], loaded: false, more: false },
   pick: null, // 개인 모드 계획 고르기 { step, context: "join"|"change", name, roadmap, perDay, start }
   members: null, showAllMissed: false, push: "unknown",
 };
@@ -98,6 +99,7 @@ async function loadState() {
   S.startDate = data.startDate;
   S.today = data.today;
   S.vapid = data.vapidPublicKey;
+  S.chatUnread = data.chatUnread || 0;
   S.checks = new Map(Object.entries(data.checks).map(([d, keys]) => [Number(d), new Set(keys)]));
   S.loaded = true;
 }
@@ -196,17 +198,21 @@ function pushNotice() {
 const ICONS = {
   today: `<path d="M4 5.5A1.5 1.5 0 015.5 4H11v16H5.5A1.5 1.5 0 014 18.5z M20 5.5A1.5 1.5 0 0018.5 4H13v16h5.5a1.5 1.5 0 001.5-1.5z"/>`,
   together: `<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.3-.3 4.4 1.2 5 4.3"/>`,
+  chat: `<path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H10l-4 3.5V16h0.5A2.5 2.5 0 014 13.5z"/><path d="M8.5 9.5h7M8.5 12.5h4.5"/>`,
   plan: `<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>`,
   settings: `<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.4l2 1.2M17.8 15.4l2 1.2M4.2 16.6l2-1.2M17.8 8.6l2-1.2"/>`,
 };
-const TAB_NAMES = { today: "오늘", together: "함께", plan: "일정", settings: "설정" };
+const TAB_NAMES = { today: "오늘", together: "함께", chat: "대화", plan: "일정", settings: "설정" };
+const GROUP_ONLY_TABS = ["together", "chat"];
 
 function navHtml() {
-  const tabs = Object.keys(TAB_NAMES).filter((t) => !(personal() && t === "together"));
+  const tabs = Object.keys(TAB_NAMES).filter((t) => !(personal() && GROUP_ONLY_TABS.includes(t)));
+  const badge = (t) => (t === "chat" && S.chatUnread > 0 && S.tab !== "chat"
+    ? `<span class="tab-badge" aria-label="안 읽은 메시지 ${S.chatUnread}개">${S.chatUnread > 99 ? "99+" : S.chatUnread}</span>` : "");
   return `<nav class="tabs" aria-label="메뉴"><div class="inner" style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map((t) => `
     <button data-action="tab" data-tab="${t}" ${S.tab === t ? 'aria-current="page"' : ""}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[t]}</svg>
-      ${TAB_NAMES[t]}</button>`).join("")}</div></nav>`;
+      ${TAB_NAMES[t]}${badge(t)}</button>`).join("")}</div></nav>`;
 }
 
 // ── 화면: 입장 ────────────────────────────────────────
@@ -575,6 +581,189 @@ async function openMember(id) {
     <p class="hint">어제까지의 날짜 중 아직 체크하지 않은 장이에요. 나중에 체크하면 목록에서 빠져요.</p>`);
 }
 
+// ── 화면: 대화 (모임 단톡방) ──────────────────────────
+const REACTIONS = ["🙏", "❤️", "👍"];
+const kstDateOf = (iso) => new Date(Date.parse(iso) + 9 * 3600000).toISOString().slice(0, 10);
+const timeOf = (iso) => new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "numeric", minute: "2-digit" });
+const nameOf = (id) => S.members?.find((m) => m.id === id)?.name || "";
+
+function reactionsHtml(m) {
+  const entries = Object.entries(m.reactions || {}).filter(([, ids]) => ids.length);
+  if (!entries.length) return "";
+  return `<div class="rx-row">${entries.map(([emoji, ids]) => `<button class="rx ${ids.includes(S.me.id) ? "on" : ""}" data-action="chat-react" data-id="${m.id}" data-emoji="${emoji}" aria-label="${emoji} ${ids.length}명">${emoji} ${ids.length}</button>`).join("")}</div>`;
+}
+
+function chatListHtml() {
+  const c = S.chat;
+  if (!c.loaded) return `<p class="empty">불러오는 중…</p>`;
+  if (!c.msgs.length) return `<p class="empty">아직 대화가 없어요.<br>첫 메시지를 남겨 보세요 🙂</p>`;
+  let html = c.more ? `<button class="btn ghost chat-older" data-action="chat-older">이전 메시지 더 보기</button>` : "";
+  let prevDate = null;
+  let prevAuthor = null;
+  for (const m of c.msgs) {
+    const date = kstDateOf(m.created_at);
+    if (date !== prevDate) {
+      html += `<div class="chat-day">${niceDate(date, date.slice(0, 4) !== S.today.slice(0, 4))}</div>`;
+      prevDate = date;
+      prevAuthor = null;
+    }
+    if (m.kind === "done") {
+      html += `<div class="chat-done" data-action="chat-msg" data-id="${m.id}"><span>🎉 <b>${esc(m.name)}</b>님이 오늘 말씀을 다 읽었어요</span>${reactionsHtml(m)}</div>`;
+      prevAuthor = null;
+      continue;
+    }
+    const mine = m.member_id === S.me.id;
+    html += `<div class="msg ${mine ? "mine" : ""}">
+      ${!mine && prevAuthor !== m.member_id ? `<div class="msg-name">${esc(m.name)}</div>` : ""}
+      <div class="msg-row">
+        <div class="bubble ${m.deleted ? "deleted" : ""}" data-action="chat-msg" data-id="${m.id}">${m.deleted ? "삭제된 메시지예요" : esc(m.body)}</div>
+        <span class="msg-time">${timeOf(m.created_at)}</span>
+      </div>${reactionsHtml(m)}</div>`;
+    prevAuthor = m.member_id;
+  }
+  return html;
+}
+
+function renderChat() {
+  $("#app").innerHTML = `
+    <header class="top"><h1>대화</h1><span class="date">모임 단톡방</span></header>
+    <div id="chat-list" class="chat-list">${chatListHtml()}</div>
+    <form id="chat-form" class="chat-form">
+      <textarea class="chat-input" name="body" rows="1" maxlength="1000" placeholder="메시지 보내기" aria-label="메시지">${esc(S.chatDraft)}</textarea>
+      <button class="btn" type="submit">보내기</button>
+    </form>
+    ${navHtml()}`;
+  autoGrow($("#chat-form textarea"));
+  if (!S.chat.loaded) loadChat();
+  else { scrollChatToBottom(); markChatRead(); }
+  if (!S.members) loadMembers();
+}
+
+const nearBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160;
+const scrollChatToBottom = () => window.scrollTo(0, document.documentElement.scrollHeight);
+function autoGrow(t) {
+  if (!t) return;
+  t.style.height = "auto";
+  t.style.height = `${Math.min(t.scrollHeight, 120)}px`;
+}
+
+function updateChatList({ toBottom = false } = {}) {
+  const el = $("#chat-list");
+  if (!el) return;
+  const stick = toBottom || nearBottom();
+  el.innerHTML = chatListHtml();
+  if (stick) scrollChatToBottom();
+}
+
+async function markChatRead() {
+  const last = S.chat.msgs.at(-1);
+  if (!last || S.tab !== "chat" || document.visibilityState !== "visible") return;
+  const had = S.chatUnread;
+  S.chatUnread = 0;
+  if (had) { const nav = $("nav.tabs"); if (nav) nav.outerHTML = navHtml(); }
+  api("/chat/read", { method: "POST", body: { id: last.id } }).catch(() => {});
+}
+
+async function loadChat() {
+  try {
+    const { messages } = await api("/chat");
+    S.chat = { msgs: messages, loaded: true, more: messages.length >= 100 };
+    if (S.tab === "chat") { updateChatList({ toBottom: true }); markChatRead(); }
+  } catch (e) { toast(e.message); }
+}
+
+async function loadOlderChat() {
+  const first = S.chat.msgs[0];
+  if (!first) return;
+  try {
+    const { messages } = await api(`/chat?before=${first.id}`);
+    const before = document.documentElement.scrollHeight;
+    S.chat.msgs = [...messages, ...S.chat.msgs];
+    S.chat.more = messages.length >= 100;
+    updateChatList();
+    window.scrollTo(0, window.scrollY + document.documentElement.scrollHeight - before); // 보던 위치 유지
+  } catch (e) { toast(e.message); }
+}
+
+let chatPolling = false;
+async function pollChat() {
+  if (chatPolling || !S.chat.loaded) return;
+  chatPolling = true;
+  try {
+    const c = S.chat;
+    const last = c.msgs.at(-1)?.id || 0;
+    if (!last) { await loadChat(); return; }
+    const { messages, updates } = await api(`/chat?after=${last}&from=${c.msgs[0].id}`);
+    let changed = messages.length > 0;
+    for (const u of updates) {
+      const i = c.msgs.findIndex((m) => m.id === u.id);
+      if (i >= 0 && JSON.stringify(c.msgs[i]) !== JSON.stringify(u)) { c.msgs[i] = u; changed = true; }
+    }
+    const fresh = messages.filter((m) => !c.msgs.some((x) => x.id === m.id));
+    c.msgs.push(...fresh);
+    if (changed && S.tab === "chat") updateChatList();
+    if (fresh.length) markChatRead();
+  } catch { /* 잠시 연결이 끊겨도 다음 번에 다시 */ } finally { chatPolling = false; }
+}
+// 대화 탭을 보고 있을 때만 4초마다 새 메시지 확인
+setInterval(() => {
+  if (S.token && S.loaded && !personal() && S.tab === "chat" && document.visibilityState === "visible") pollChat();
+}, 4000);
+
+async function sendChat(form) {
+  const t = form.body;
+  const text = t.value.trim();
+  if (!text) return;
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const { message } = await api("/chat", { method: "POST", body: { body: text } });
+    if (!S.chat.msgs.some((m) => m.id === message.id)) S.chat.msgs.push(message);
+    S.chatDraft = "";
+    t.value = "";
+    autoGrow(t);
+    updateChatList({ toBottom: true });
+  } catch (e) { toast(e.message); } finally { btn.disabled = false; t.focus(); }
+}
+
+function openChatMessage(id) {
+  const m = S.chat.msgs.find((x) => x.id === id);
+  if (!m || m.deleted) return;
+  const mine = m.member_id === S.me.id;
+  const who = Object.entries(m.reactions || {}).filter(([, ids]) => ids.length)
+    .map(([emoji, ids]) => `<li>${emoji} ${ids.map((i) => esc(nameOf(i) || "?")).join(", ")}</li>`).join("");
+  openSheet(`
+    <h3>${m.kind === "done" ? "읽기 완료 소식" : mine ? "내 메시지" : `${esc(m.name)}님의 메시지`}</h3>
+    <p class="muted" style="margin:0 0 14px;white-space:pre-wrap">${m.kind === "done" ? `${esc(m.name)}님이 오늘 말씀을 다 읽었어요 🎉` : esc(m.body.length > 120 ? m.body.slice(0, 120) + "…" : m.body)}</p>
+    <div class="rx-big">${REACTIONS.map((e) => `<button class="${(m.reactions?.[e] || []).includes(S.me.id) ? "on" : ""}" data-action="chat-react" data-id="${m.id}" data-emoji="${e}" aria-label="${e} 공감">${e}</button>`).join("")}</div>
+    ${who ? `<h2 class="section">공감한 사람</h2><ul class="plain rx-who">${who}</ul>` : ""}
+    ${mine && m.kind === "text" ? `<button class="btn danger block mt" data-action="chat-delete" data-id="${m.id}">메시지 지우기</button>` : ""}`);
+}
+
+async function reactChat(id, emoji) {
+  const m = S.chat.msgs.find((x) => x.id === id);
+  if (!m) return;
+  try {
+    const { on } = await api(`/chat/${id}/react`, { method: "POST", body: { emoji } });
+    const ids = new Set(m.reactions?.[emoji] || []);
+    on ? ids.add(S.me.id) : ids.delete(S.me.id);
+    m.reactions = { ...m.reactions, [emoji]: [...ids] };
+    closeSheet();
+    updateChatList();
+  } catch (e) { toast(e.message); }
+}
+
+async function deleteChat(id) {
+  if (!confirm("이 메시지를 지울까요? 모두의 화면에서 '삭제된 메시지예요'로 바뀌어요.")) return;
+  try {
+    await api(`/chat/${id}`, { method: "DELETE" });
+    const m = S.chat.msgs.find((x) => x.id === id);
+    if (m) { m.deleted = true; m.body = ""; m.reactions = {}; }
+    closeSheet();
+    updateChatList();
+  } catch (e) { toast(e.message); }
+}
+
 // ── 화면: 전체 일정 ───────────────────────────────────
 function renderPlan() {
   const t = todayDay();
@@ -631,6 +820,10 @@ function renderSettings() {
           <div class="main">${name}<small>${desc}</small></div>
           ${timePick(slot, me[slot])}
         </div>`).join("")}
+      ${personal() ? "" : `<div class="setting-row slot">
+          <label class="switch"><input type="checkbox" data-action="chat-push" ${me.chat_push !== false ? "checked" : ""} aria-label="대화 알림"><i></i></label>
+          <div class="main">대화<small>새 메시지가 오면 알림 (읽기 완료 소식은 알림 없음)</small></div>
+        </div>`}
       <p class="hint">점심·저녁 알림은 그날 분량을 다 체크하지 않았을 때만 와요.</p>
     </div>
 
@@ -800,8 +993,11 @@ function openInstallGuide() {
 function render() {
   if (!S.token) { renderJoin(); return; }
   if (!S.loaded) { $("#app").innerHTML = `<div class="splash">${brandHtml()}</div>`; return; }
-  if (personal() && S.tab === "together") S.tab = "today";
-  ({ today: renderToday, together: renderTogether, plan: renderPlan, settings: renderSettings }[S.tab] || renderToday)();
+  if (personal() && GROUP_ONLY_TABS.includes(S.tab)) S.tab = "today";
+  $("#app").classList.toggle("chat-mode", S.tab === "chat");
+  ({ today: renderToday, together: renderTogether, chat: renderChat, plan: renderPlan, settings: renderSettings }[S.tab] || renderToday)();
+  const nav = $("nav.tabs");
+  if (nav) document.documentElement.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
 }
 
 // ── 이벤트 ────────────────────────────────────────────
@@ -899,6 +1095,10 @@ document.addEventListener("click", async (ev) => {
   else if (a === "pick-submit") submitPick(el);
   else if (a === "plan-change") openPlanChange();
   else if (a === "member") openMember(Number(el.dataset.id));
+  else if (a === "chat-msg") openChatMessage(Number(el.dataset.id));
+  else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);
+  else if (a === "chat-delete") deleteChat(Number(el.dataset.id));
+  else if (a === "chat-older") loadOlderChat();
   else if (a === "show-code") openRecoveryInfo();
   else if (a === "copy-code") {
     try { await navigator.clipboard.writeText(S.me.recoveryCode); toast("복사했어요."); } catch { toast("길게 눌러 직접 복사해 주세요."); }
@@ -918,6 +1118,7 @@ document.addEventListener("change", (ev) => {
   const el = ev.target;
   if (el.id === "pick-start" && el.value) { S.pick.start = el.value; rerenderPicker(); return; }
   if (el.dataset.action === "slot-on") saveMe({ [`${el.dataset.slot}_on`]: el.checked });
+  if (el.dataset.action === "chat-push") saveMe({ chat_push: el.checked });
   if (el.dataset.action === "time") {
     const slot = el.dataset.slot;
     const h = $(`select[data-slot="${slot}"][data-part="h"]`).value;
@@ -927,6 +1128,7 @@ document.addEventListener("change", (ev) => {
 });
 
 document.addEventListener("input", (ev) => {
+  if (ev.target.form?.id === "chat-form") { S.chatDraft = ev.target.value; autoGrow(ev.target); }
   if (ev.target.form?.id === "day-form") previewDay(ev.target);
   if (ev.target.form?.id === "pick-name-form" && S.pick) S.pick.name = ev.target.value;
 });
@@ -934,7 +1136,8 @@ document.addEventListener("input", (ev) => {
 document.addEventListener("submit", async (ev) => {
   const f = ev.target;
   ev.preventDefault();
-  if (f.id === "join-form") submitJoin(f);
+  if (f.id === "chat-form") sendChat(f);
+  else if (f.id === "join-form") submitJoin(f);
   else if (f.id === "pick-name-form") {
     const name = f.name.value.trim();
     if (!name) { toast("이름을 적어 주세요."); return; }
@@ -972,8 +1175,14 @@ document.addEventListener("visibilitychange", () => {
 // ── 시작 ──────────────────────────────────────────────
 async function start() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-  const invite = new URLSearchParams(location.search).get("invite");
+  const params = new URLSearchParams(location.search);
+  const invite = params.get("invite");
   if (invite) store.set("invite", invite);
+  if (params.get("tab") && TAB_NAMES[params.get("tab")]) {
+    S.tab = params.get("tab");
+    store.set("tab", S.tab);
+    if (!invite) history.replaceState(null, "", "/");
+  }
   try {
     const config = await fetch("/api/config").then((r) => r.json());
     if (config.mode) { S.mode = config.mode; store.set("mode", S.mode); }

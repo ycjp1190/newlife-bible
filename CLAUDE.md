@@ -13,6 +13,7 @@
 | D1 데이터베이스 | `malsseum` (`schema.sql`) | `malsseum-personal` (`schema-personal.sql`) |
 | 입장 | 초대 코드 + 이름 | 이름 + 시작일, 다른 기기는 **복구 코드** |
 | 시작일·읽기표·변경 기록 | 모두가 공용 | 사람마다 따로 (`member_plan` 표) |
+| 대화(단톡방) | 있음 (탭 5개: 오늘/함께/대화/일정/설정) | 없음 |
 | 읽기 로드맵 | 397일 로드맵 고정 | 4가지 중 선택 + 하루 분량 선택 (아래 참고). 설정에서 '계획 바꾸기' |
 | 화면 | 탭 4개 (오늘/함께/일정/설정) | 탭 3개 ("함께" 없음), 갈색 아이콘 (`public/personal/`) |
 
@@ -35,6 +36,7 @@
 | `worker/logic.js` | 진도·밀린 날 계산, 알림 보낼지·문구 판단 (순수 함수) |
 | `worker/push.js` | 웹 푸시 암호화·서명 (외부 라이브러리 없음) |
 | `schema.sql`, `schema-personal.sql` | DB 표 구조 (모임 / 개인 최초 구조) |
+| `migrations-group/` | 모임 DB 표 구조 변경 파일(대화 등). 배포 때 자동 적용. **이미 적용된 파일은 고치지 말고 새 번호 파일을 추가** |
 | `migrations-personal/` | 개인 DB 표 구조 변경 파일. 배포 때 자동 적용. **이미 적용된 파일은 절대 고치지 말고 새 번호 파일을 추가**한다 |
 | `public/personal/` | 개인 모드 전용 아이콘·manifest (Worker가 개인 모드에서만 바꿔 보여 줌) |
 | `data/seed.sql`, `data/plan-397.json` | 기본 397일 읽기표 (`scripts/build-plan.mjs`로 생성) |

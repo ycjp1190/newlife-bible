@@ -7,7 +7,7 @@
 // - 모임 모드(기본): 초대 코드로 입장, 시작일·읽기표를 모두가 함께 씀 (schema.sql)
 // - 개인 모드(MODE=personal): 코드 없이 시작, 사람마다 시작일·읽기표가 따로 (schema-personal.sql)
 import {
-  dateOfDay, dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
+  chapterKey, dateOfDay, dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
 } from "../public/shared/bible.js";
 import {
   buildPlan, fixedDays, isFixed, isRoadmap, ROADMAPS, yearLength,
@@ -30,11 +30,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const isPersonal = (env) => env.MODE === "personal";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return serveAsset(request, env, url);
     try {
-      return await handleApi(request, env, url);
+      return await handleApi(request, env, url, ctx);
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.message }, e.status);
       console.error(e);
@@ -202,6 +202,7 @@ const publicMember = (m) => ({
   morning: m.morning, lunch: m.lunch, evening: m.evening,
   morning_on: !!m.morning_on, lunch_on: !!m.lunch_on, evening_on: !!m.evening_on,
   ...(m.recovery_code ? { recoveryCode: m.recovery_code } : {}),
+  ...(m.chat_push !== undefined ? { chat_push: !!m.chat_push } : {}),
 });
 
 async function readBody(request) {
@@ -236,7 +237,7 @@ const normalizeCode = (code) => {
 };
 
 // ── API ────────────────────────────────────────────────
-async function handleApi(request, env, url) {
+async function handleApi(request, env, url, ctx) {
   const path = url.pathname.slice(4); // "/api" 제거
   const method = request.method;
 
@@ -273,6 +274,7 @@ async function handleApi(request, env, url) {
       perDay: isPersonal(env) ? me.per_day : 3,
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
+      ...(isPersonal(env) ? {} : { chatUnread: await chatUnread(env, me) }),
     });
   }
 
@@ -290,11 +292,18 @@ async function handleApi(request, env, url) {
     } else if (checked) {
       await env.DB.prepare("INSERT OR IGNORE INTO checks (member_id, day, chapter, checked_at) VALUES (?, ?, ?, ?)")
         .bind(me.id, day, chapter, nowIso()).run();
+      await postDoneIfToday(env, me, day);
     } else {
       await env.DB.prepare("DELETE FROM checks WHERE member_id = ? AND day = ? AND chapter = ?")
         .bind(me.id, day, chapter).run();
     }
     return json({ ok: true });
+  }
+
+  // 대화(단톡방) — 모임 모드 전용
+  if (path === "/chat" || path.startsWith("/chat/")) {
+    if (isPersonal(env)) throw new HttpError(404, "없는 요청이에요.");
+    return handleChat(request, env, ctx, me, path, method, url);
   }
 
   // 함께 읽기: 모든 사람의 진행 현황 (모임 모드 전용)
@@ -461,6 +470,10 @@ async function handleApi(request, env, url) {
        morning_on = ?, lunch_on = ?, evening_on = ? WHERE id = ?`,
     ).bind(next.name, next.morning, next.lunch, next.evening,
       next.morning_on, next.lunch_on, next.evening_on, me.id).run();
+    if (!isPersonal(env) && body.chat_push !== undefined) {
+      next.chat_push = body.chat_push ? 1 : 0;
+      await env.DB.prepare("UPDATE members SET chat_push = ? WHERE id = ?").bind(next.chat_push, me.id).run();
+    }
     return json({ ok: true, me: publicMember(next) });
   }
 
@@ -488,6 +501,132 @@ async function handleApi(request, env, url) {
     });
     if (!sent) throw new HttpError(400, "이 사람에게 등록된 알림 기기가 없어요. 먼저 알림을 켜 주세요.");
     return json({ ok: true, sent });
+  }
+
+  throw new HttpError(404, "없는 요청이에요.");
+}
+
+// ── 대화(단톡방) ───────────────────────────────────────
+const REACTIONS = ["🙏", "❤️", "👍"];
+const MSG_COLS = `m.id, m.member_id, mem.name, m.kind, m.day,
+  CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at IS NOT NULL AS deleted`;
+
+async function attachReactions(env, rows) {
+  if (!rows.length) return rows;
+  const { results } = await env.DB.prepare(
+    "SELECT message_id, member_id, emoji FROM reactions WHERE message_id IN (SELECT value FROM json_each(?))",
+  ).bind(JSON.stringify(rows.map((r) => r.id))).all();
+  const by = new Map();
+  for (const r of results) {
+    if (!by.has(r.message_id)) by.set(r.message_id, {});
+    (by.get(r.message_id)[r.emoji] ||= []).push(r.member_id);
+  }
+  return rows.map((r) => ({ ...r, deleted: !!r.deleted, reactions: by.get(r.id) || {} }));
+}
+
+// 안 읽은 메시지 수 (다른 사람이 쓴 일반 메시지만. 읽기 완료 소식은 세지 않음)
+async function chatUnread(env, me) {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM messages WHERE id > ? AND member_id != ? AND kind = 'text' AND deleted_at IS NULL",
+  ).bind(me.last_read_msg || 0, me.id).first();
+  return row?.n || 0;
+}
+
+// 오늘 분량을 다 체크한 순간 '읽기 완료' 소식 (한 사람당 하루 한 번, 지난 날 완료는 제외, 알림 없음)
+async function postDoneIfToday(env, me, day) {
+  const startDate = await getStartDate(env, me);
+  if (!startDate || dayIndex(startDate, kstToday()) !== day) return;
+  const row = await getDayRow(env, me, day);
+  if (!row) return;
+  const chapters = JSON.parse(row.chapters);
+  if (!chapters.length) return;
+  const { results } = await env.DB.prepare("SELECT chapter FROM checks WHERE member_id = ? AND day = ?").bind(me.id, day).all();
+  const set = new Set(results.map((r) => r.chapter));
+  if (!chapters.every((c) => set.has(chapterKey(c)))) return;
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO messages (member_id, kind, day, body, created_at) VALUES (?, 'done', ?, ?, ?)",
+  ).bind(me.id, day, "오늘 말씀을 다 읽었어요 🎉", nowIso()).run();
+}
+
+async function notifyChat(env, me, text) {
+  const { results } = await env.DB.prepare(
+    `SELECT m.id FROM members m WHERE m.id != ? AND m.chat_push = 1
+     AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id)`,
+  ).bind(me.id).all();
+  const body = text.length > 80 ? text.slice(0, 80) + "…" : text;
+  for (const m of results) {
+    await pushToMember(env, m.id, { title: `💬 ${me.name}`, body, url: "/?tab=chat", tag: "chat" }).catch(() => {});
+  }
+}
+
+async function handleChat(request, env, ctx, me, path, method, url) {
+  // 불러오기: 처음엔 최근 100개, before=ID 면 그 이전 100개, after=ID 면 새 메시지 + from 이후 메시지의 공감·삭제 변화
+  if (path === "/chat" && method === "GET") {
+    const after = Number(url.searchParams.get("after") || 0);
+    const before = Number(url.searchParams.get("before") || 0);
+    const base = `SELECT ${MSG_COLS} FROM messages m LEFT JOIN members mem ON mem.id = m.member_id`;
+    let rows;
+    let updates = [];
+    if (after) {
+      rows = (await env.DB.prepare(`${base} WHERE m.id > ? ORDER BY m.id LIMIT 200`).bind(after).all()).results;
+      const from = Number(url.searchParams.get("from") || after);
+      updates = (await env.DB.prepare(`${base} WHERE m.id >= ? AND m.id <= ? ORDER BY m.id`).bind(from, after).all()).results;
+    } else if (before) {
+      rows = (await env.DB.prepare(`${base} WHERE m.id < ? ORDER BY m.id DESC LIMIT 100`).bind(before).all()).results.reverse();
+    } else {
+      rows = (await env.DB.prepare(`${base} ORDER BY m.id DESC LIMIT 100`).all()).results.reverse();
+    }
+    return json({ messages: await attachReactions(env, rows), updates: await attachReactions(env, updates) });
+  }
+
+  if (path === "/chat" && method === "POST") {
+    const { body } = await readBody(request);
+    const text = String(body || "").replace(/\r\n/g, "\n").trim();
+    if (!text) throw new HttpError(400, "메시지를 적어 주세요.");
+    if (text.length > 1000) throw new HttpError(400, "메시지는 1,000자까지 보낼 수 있어요.");
+    const created = nowIso();
+    await env.DB.prepare("INSERT INTO messages (member_id, kind, body, created_at) VALUES (?, 'text', ?, ?)")
+      .bind(me.id, text, created).run();
+    const row = await env.DB.prepare(`SELECT ${MSG_COLS} FROM messages m LEFT JOIN members mem ON mem.id = m.member_id
+      WHERE m.member_id = ? AND m.created_at = ? ORDER BY m.id DESC LIMIT 1`).bind(me.id, created).first();
+    await env.DB.prepare("UPDATE members SET last_read_msg = MAX(last_read_msg, ?) WHERE id = ?").bind(row.id, me.id).run();
+    const job = notifyChat(env, me, text);
+    if (ctx?.waitUntil) ctx.waitUntil(job); else await job;
+    return json({ message: (await attachReactions(env, [row]))[0] });
+  }
+
+  if (path === "/chat/read" && method === "POST") {
+    const { id } = await readBody(request);
+    if (!Number.isInteger(id)) throw new HttpError(400, "잘못된 요청이에요.");
+    await env.DB.prepare("UPDATE members SET last_read_msg = MAX(last_read_msg, ?) WHERE id = ?").bind(id, me.id).run();
+    return json({ ok: true });
+  }
+
+  const reactMatch = path.match(/^\/chat\/(\d+)\/react$/);
+  if (reactMatch && method === "POST") {
+    const id = Number(reactMatch[1]);
+    const { emoji } = await readBody(request);
+    if (!REACTIONS.includes(emoji)) throw new HttpError(400, "공감은 🙏 ❤️ 👍 중에서 골라 주세요.");
+    const msg = await env.DB.prepare("SELECT deleted_at FROM messages WHERE id = ?").bind(id).first();
+    if (!msg || msg.deleted_at) throw new HttpError(404, "메시지를 찾지 못했어요.");
+    const had = await env.DB.prepare("SELECT 1 FROM reactions WHERE message_id = ? AND member_id = ? AND emoji = ?").bind(id, me.id, emoji).first();
+    await (had
+      ? env.DB.prepare("DELETE FROM reactions WHERE message_id = ? AND member_id = ? AND emoji = ?").bind(id, me.id, emoji)
+      : env.DB.prepare("INSERT INTO reactions (message_id, member_id, emoji) VALUES (?, ?, ?)").bind(id, me.id, emoji)).run();
+    return json({ ok: true, on: !had });
+  }
+
+  const delMatch = path.match(/^\/chat\/(\d+)$/);
+  if (delMatch && method === "DELETE") {
+    const id = Number(delMatch[1]);
+    const msg = await env.DB.prepare("SELECT member_id, kind FROM messages WHERE id = ?").bind(id).first();
+    if (!msg) throw new HttpError(404, "메시지를 찾지 못했어요.");
+    if (msg.member_id !== me.id || msg.kind !== "text") throw new HttpError(403, "내가 쓴 메시지만 지울 수 있어요.");
+    await env.DB.batch([
+      env.DB.prepare("UPDATE messages SET body = '', deleted_at = ? WHERE id = ?").bind(nowIso(), id),
+      env.DB.prepare("DELETE FROM reactions WHERE message_id = ?").bind(id),
+    ]);
+    return json({ ok: true });
   }
 
   throw new HttpError(404, "없는 요청이에요.");
