@@ -279,8 +279,8 @@ function checkAdmin(request, env) {
   if (!sameCode(given, env.ADMIN_CODE)) throw new HttpError(403, "관리자 코드가 맞지 않아요.");
 }
 
-// 운영자 확인용 이름 (wrangler.toml 의 TEST_NAMES, 쉼표로 구분) → 통계·인원수에서 뺀다
-const testNames = (env) => new Set(String(env.TEST_NAMES || "").split(",").map((x) => x.trim()).filter(Boolean));
+// 운영자 점검용 이름 (wrangler.toml 의 TEST_NAMES, 쉼표로 구분, 대소문자 구분 없음) → 통계·인원수에서 뺀다
+const testNames = (env) => new Set(String(env.TEST_NAMES || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
 
 // 관리자: 사용자 한 명과 그 기록을 모두 지운다 (되돌릴 수 없음)
 async function adminDelete(request, env) {
@@ -309,7 +309,7 @@ async function adminStats(request, env) {
   const users = results.map((r) => ({
     no: r.id, name: r.name, roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date,
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, appFirstAt: r.app_first_at, appLastAt: r.app_last_at,
-    push: !!r.push, checked: r.checked, test: testNames(env).has(r.name),
+    push: !!r.push, checked: r.checked, test: testNames(env).has(String(r.name).trim().toLowerCase()),
   }));
   const real = users.filter((u) => !u.test);
   const count = (f) => real.filter(f).length;

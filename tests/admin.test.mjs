@@ -66,18 +66,18 @@ test("시작할 때도 접속·앱 기록", async () => {
 
 test("테스트 이름은 통계에서 빠지고, 관리자는 계정을 지울 수 있다", async () => {
   const DB = createLocalDB({ mode: "personal" });
-  const env = { DB, ASSETS: { fetch: () => new Response("") }, MODE: "personal", ADMIN_CODE: "c", TEST_NAMES: "예찬" };
+  const env = { DB, ASSETS: { fetch: () => new Response("") }, MODE: "personal", ADMIN_CODE: "c", TEST_NAMES: "Admin" };
   const call = async (path, { method = "GET", body, headers = {}, token } = {}) => {
     const res = await worker.fetch(new Request("https://app.test" + path, { method, headers: { "Content-Type": "application/json", ...headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined }), env, { waitUntil() {} });
     return { status: res.status, data: await res.json().catch(() => null) };
   };
-  const t = (await call("/api/join", { method: "POST", body: { name: "예찬", start_date: "2026-10-01" } })).data;
+  const t = (await call("/api/join", { method: "POST", body: { name: "admin", start_date: "2026-10-01" } })).data;
   await call("/api/join", { method: "POST", body: { name: "실사용자", start_date: "2026-10-01" } });
   await call("/api/check", { method: "POST", token: t.token, body: { day: 1, chapter: "누가복음 1", checked: true } });
   let stats = (await call("/api/admin/stats", { headers: { "X-Admin-Code": "c" } })).data;
   assert.equal(stats.summary.total, 1);
   assert.equal(stats.summary.tests, 1);
-  assert.equal(stats.users.find((u) => u.name === "예찬").test, true);
+  assert.equal(stats.users.find((u) => u.name === "admin").test, true);
 
   assert.equal((await call("/api/admin/delete", { method: "POST", body: { id: t.member.id } })).status, 403);
   assert.equal((await call("/api/admin/delete", { method: "POST", headers: { "X-Admin-Code": "c" }, body: { id: t.member.id } })).status, 200);
