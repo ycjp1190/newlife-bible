@@ -1317,7 +1317,7 @@ async function loadAdmin(code) {
       ${stat(sm.push, "알림 켬")}
     </div>
     <p class="mm-months mt">${ROADMAP_ORDER.map((id) => `<span class="chip">${esc(ROADMAPS[id].name)} ${sm.byRoadmap[id] || 0}</span>`).join(" ")}</p>
-    <h2 class="section">사용자 <small>최근 접속 순 · 이름 일부 가림</small></h2>
+    <h2 class="section">사용자 <small>최근 접속 순</small></h2>
     <ul class="card list admin-list">${rows || `<p class="empty">아직 없어요.</p>`}</ul>
     <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (2026년 10월 2일 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
     <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>`;

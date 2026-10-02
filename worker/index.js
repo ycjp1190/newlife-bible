@@ -245,14 +245,6 @@ async function authMember(request, env) {
   return me;
 }
 
-// 이름 일부 가리기: 홍길동 → 홍*동, 홍길 → 홍*, 남궁민수 → 남**수
-function maskName(name) {
-  const c = [...String(name || "")];
-  if (c.length <= 1) return "*";
-  if (c.length === 2) return c[0] + "*";
-  return c[0] + "*".repeat(c.length - 2) + c.at(-1);
-}
-
 // 관리자 코드 확인 (길이와 상관없이 비교 시간이 일정하게)
 function sameCode(a, b) {
   const x = new TextEncoder().encode(String(a || ""));
@@ -262,7 +254,7 @@ function sameCode(a, b) {
   return diff === 0;
 }
 
-// 관리자 통계 (개인 모드, ADMIN_CODE 가 설정된 경우만). 이름은 일부 가려서 보낸다.
+// 관리자 통계 (개인 모드, ADMIN_CODE 가 설정된 경우만). 운영자 전용이라 실명을 보여 준다.
 async function adminStats(request, env) {
   if (!isPersonal(env) || !env.ADMIN_CODE) throw new HttpError(404, "없는 요청이에요.");
   let given = request.headers.get("X-Admin-Code") || "";
@@ -278,7 +270,7 @@ async function adminStats(request, env) {
   const d1 = ago(1);
   const d7 = ago(7);
   const users = results.map((r) => ({
-    no: r.id, name: maskName(r.name), roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date,
+    no: r.id, name: r.name, roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date,
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, appFirstAt: r.app_first_at, appLastAt: r.app_last_at,
     push: !!r.push, checked: r.checked,
   }));

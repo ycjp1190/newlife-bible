@@ -17,7 +17,7 @@ function makeApp({ mode = "personal", admin = "secret-code", DB = createLocalDB(
 const join = async (call, name, roadmap = "flow397") =>
   (await call("/api/join", { method: "POST", body: { name, start_date: "2026-10-01", roadmap } })).data.token;
 
-test("관리자 통계: 코드가 맞아야 보이고, 이름은 일부 가림", async () => {
+test("관리자 통계: 코드가 맞아야 보이고, 운영자에게는 실명", async () => {
   const call = makeApp();
   const a = await join(call, "홍길동");
   await join(call, "김철", "community");
@@ -30,10 +30,9 @@ test("관리자 통계: 코드가 맞아야 보이고, 이름은 일부 가림",
   assert.equal(summary.total, 3);
   assert.equal(summary.installed, 1);
   assert.equal(summary.byRoadmap.community, 1);
-  assert.deepEqual(users.map((u) => u.name), ["홍*동", "김*", "남**수"]);
+  assert.deepEqual(users.map((u) => u.name), ["홍길동", "김철", "남궁민수"]);
   assert.ok(users[0].appFirstAt && users[0].appLastAt);
   assert.equal(users[1].appFirstAt, null);
-  assert.ok(!JSON.stringify(users).includes("홍길동")); // 원래 이름은 보내지 않음
 });
 
 test("관리자 통계: 코드가 설정 안 됐거나 모임 모드면 없음", async () => {
