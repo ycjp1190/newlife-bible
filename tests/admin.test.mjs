@@ -1,0 +1,66 @@
+// 개인 모드 관리자 통계 · 설치형 앱 사용 기록 검사
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import worker from "../worker/index.js";
+import { createLocalDB, personalMigrations } from "../scripts/d1-local.mjs";
+
+function makeApp({ mode = "personal", admin = "secret-code", DB = createLocalDB({ mode }) } = {}) {
+  const env = { DB, ASSETS: { fetch: () => new Response("") }, INVITE_CODE: "test", ...(mode === "personal" ? { MODE: "personal" } : {}), ...(admin ? { ADMIN_CODE: admin } : {}) };
+  return async (path, { method = "GET", body, token, headers = {} } = {}) => {
+    const res = await worker.fetch(new Request("https://app.test" + path, {
+      method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
+      body: body ? JSON.stringify(body) : undefined,
+    }), env, { waitUntil() {} });
+    return { status: res.status, data: await res.json().catch(() => null) };
+  };
+}
+const join = async (call, name, roadmap = "flow397") =>
+  (await call("/api/join", { method: "POST", body: { name, start_date: "2026-10-01", roadmap } })).data.token;
+
+test("관리자 통계: 코드가 맞아야 보이고, 이름은 일부 가림", async () => {
+  const call = makeApp();
+  const a = await join(call, "홍길동");
+  await join(call, "김철", "community");
+  await join(call, "남궁민수", "chrono");
+  await call("/api/state", { token: a, headers: { "X-App-Mode": "standalone" } }); // 홍길동만 설치형 앱으로 염
+
+  assert.equal((await call("/api/admin/stats")).status, 403);
+  assert.equal((await call("/api/admin/stats", { headers: { "X-Admin-Code": encodeURIComponent("틀림") } })).status, 403);
+  const { summary, users } = (await call("/api/admin/stats", { headers: { "X-Admin-Code": "secret-code" } })).data;
+  assert.equal(summary.total, 3);
+  assert.equal(summary.installed, 1);
+  assert.equal(summary.byRoadmap.community, 1);
+  assert.deepEqual(users.map((u) => u.name), ["홍*동", "김*", "남**수"]);
+  assert.ok(users[0].appFirstAt && users[0].appLastAt);
+  assert.equal(users[1].appFirstAt, null);
+  assert.ok(!JSON.stringify(users).includes("홍길동")); // 원래 이름은 보내지 않음
+});
+
+test("관리자 통계: 코드가 설정 안 됐거나 모임 모드면 없음", async () => {
+  assert.equal((await makeApp({ admin: null })("/api/admin/stats", { headers: { "X-Admin-Code": "x" } })).status, 404);
+  assert.equal((await makeApp({ mode: "group" })("/api/admin/stats", { headers: { "X-Admin-Code": "secret-code" } })).status, 404);
+});
+
+test("설치 기록 변경 파일: 기존 개인 DB 에 적용해도 그대로", async () => {
+  const DB = createLocalDB({ mode: "personal", migrate: false });
+  DB.exec(personalMigrations()[0]); // 0001 까지만 적용된 상태
+  await DB.prepare("INSERT INTO members (name, token, recovery_code, start_date, created_at) VALUES ('새벽', 'tok', 'AAAA-BBBB', '2026-09-29', 'x')").run();
+  await DB.prepare("INSERT INTO member_plan (member_id, day, chapters) SELECT 1, day, chapters FROM plan_days").run();
+  for (const sql of personalMigrations().slice(1)) DB.exec(sql);
+  const call = makeApp({ DB });
+  const s = (await call("/api/state", { token: "tok", headers: { "X-App-Mode": "standalone" } })).data;
+  assert.equal(s.me.name, "새벽");
+  assert.equal(s.plan.length, 397);
+  const { users } = (await call("/api/admin/stats", { headers: { "X-Admin-Code": "secret-code" } })).data;
+  assert.ok(users[0].appFirstAt);
+});
+
+test("시작할 때도 접속·앱 기록", async () => {
+  const call = makeApp();
+  await call("/api/join", { method: "POST", body: { name: "앱사람", start_date: "2026-10-01" }, headers: { "X-App-Mode": "standalone" } });
+  await call("/api/join", { method: "POST", body: { name: "웹사람", start_date: "2026-10-01" } });
+  const { users } = (await call("/api/admin/stats", { headers: { "X-Admin-Code": "secret-code" } })).data;
+  assert.ok(users[0].lastSeenAt && users[0].appFirstAt);
+  assert.ok(users[1].lastSeenAt);
+  assert.equal(users[1].appFirstAt, null);
+});

@@ -49,6 +49,12 @@ jobs:
         run: npx wrangler d1 migrations apply malsseum-personal --env personal --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: 개인용 관리자 코드 설정 (GitHub 비밀값 ADMIN_CODE → Cloudflare 비밀값)
+        run: |
+          if [ -n "$ADMIN_CODE" ]; then printf '%s' "$ADMIN_CODE" | npx wrangler secret put ADMIN_CODE --env personal; else echo "ADMIN_CODE 없음 - 건너뜀"; fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_CODE: ${{ secrets.ADMIN_CODE }}
       - name: Cloudflare 배포 (개인용)
         run: npx wrangler deploy --env personal
         env:

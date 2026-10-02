@@ -234,8 +234,67 @@ async function authMember(request, env) {
   if (!token) throw new HttpError(401, "다시 입장해 주세요.");
   const me = await env.DB.prepare("SELECT * FROM members WHERE token = ?").bind(token).first();
   if (!me) throw new HttpError(401, "다시 입장해 주세요.");
-  await env.DB.prepare("UPDATE members SET last_seen_at = ? WHERE id = ?").bind(nowIso(), me.id).run();
+  const now = nowIso();
+  // 개인 모드: 홈 화면 앱(설치형)으로 열었으면 그 시각도 기록 (관리자 통계용)
+  if (isPersonal(env) && request.headers.get("X-App-Mode") === "standalone") {
+    await env.DB.prepare("UPDATE members SET last_seen_at = ?, app_last_at = ?, app_first_at = COALESCE(app_first_at, ?) WHERE id = ?")
+      .bind(now, now, now, me.id).run();
+  } else {
+    await env.DB.prepare("UPDATE members SET last_seen_at = ? WHERE id = ?").bind(now, me.id).run();
+  }
   return me;
+}
+
+// 이름 일부 가리기: 홍길동 → 홍*동, 홍길 → 홍*, 남궁민수 → 남**수
+function maskName(name) {
+  const c = [...String(name || "")];
+  if (c.length <= 1) return "*";
+  if (c.length === 2) return c[0] + "*";
+  return c[0] + "*".repeat(c.length - 2) + c.at(-1);
+}
+
+// 관리자 코드 확인 (길이와 상관없이 비교 시간이 일정하게)
+function sameCode(a, b) {
+  const x = new TextEncoder().encode(String(a || ""));
+  const y = new TextEncoder().encode(String(b || ""));
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] || 0) ^ (y[i] || 0);
+  return diff === 0;
+}
+
+// 관리자 통계 (개인 모드, ADMIN_CODE 가 설정된 경우만). 이름은 일부 가려서 보낸다.
+async function adminStats(request, env) {
+  if (!isPersonal(env) || !env.ADMIN_CODE) throw new HttpError(404, "없는 요청이에요.");
+  let given = request.headers.get("X-Admin-Code") || "";
+  try { given = decodeURIComponent(given); } catch { /* 그대로 비교 */ }
+  if (!sameCode(given, env.ADMIN_CODE)) throw new HttpError(403, "관리자 코드가 맞지 않아요.");
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.name, m.roadmap, m.per_day, m.start_date, m.created_at, m.last_seen_at, m.app_first_at, m.app_last_at,
+       EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id) AS push,
+       (SELECT COUNT(*) FROM checks c WHERE c.member_id = m.id AND c.plan_version = m.plan_version) AS checked
+     FROM members m ORDER BY m.id`,
+  ).all();
+  const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
+  const d1 = ago(1);
+  const d7 = ago(7);
+  const users = results.map((r) => ({
+    no: r.id, name: maskName(r.name), roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date,
+    createdAt: r.created_at, lastSeenAt: r.last_seen_at, appFirstAt: r.app_first_at, appLastAt: r.app_last_at,
+    push: !!r.push, checked: r.checked,
+  }));
+  const count = (f) => users.filter(f).length;
+  return json({
+    summary: {
+      total: users.length,
+      installed: count((u) => u.appFirstAt),
+      installed7: count((u) => u.appLastAt && u.appLastAt >= d7),
+      active1: count((u) => u.lastSeenAt && u.lastSeenAt >= d1),
+      active7: count((u) => u.lastSeenAt && u.lastSeenAt >= d7),
+      push: count((u) => u.push),
+      byRoadmap: Object.fromEntries(Object.keys(ROADMAPS).map((id) => [id, count((u) => u.roadmap === id)])),
+    },
+    users,
+  });
 }
 
 const publicMember = (m) => ({
@@ -299,6 +358,9 @@ async function handleApi(request, env, url, ctx) {
     if (!me) throw new HttpError(404, "복구 코드가 맞지 않아요. 다시 확인해 주세요.");
     return json({ token: me.token, member: publicMember(me) });
   }
+
+  // 관리자 통계 (로그인 대신 관리자 코드)
+  if (path === "/admin/stats" && method === "GET") return adminStats(request, env);
 
   // 대화 실시간 연결 (모임 모드 전용)
   if (path === "/chat/ws") {
@@ -715,11 +777,14 @@ async function joinPersonal(request, env) {
   // roadmap·per_day 가 없으면(예전 화면) 예수님에서 시작하는 통독 · 하루 3장
   const { roadmap, perDay, startDate: start_date } = checkPlanChoice(body);
   const token = newToken();
+  const now = nowIso();
+  const appNow = request.headers.get("X-App-Mode") === "standalone" ? now : null; // 앱에서 시작했으면 앱 기록도
   for (let attempt = 0; ; attempt++) {
     try {
       await env.DB.prepare(
-        "INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, nowIso()).run();
+        `INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, created_at, last_seen_at, app_first_at, app_last_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, now, now, appNow, appNow).run();
       break;
     } catch (e) {
       if (attempt >= 3) throw e; // 복구 코드가 우연히 겹치면 다시 만든다

@@ -59,7 +59,11 @@ async function api(path, { method = "GET", body } = {}) {
   try {
     res = await fetch("/api" + path, {
       method,
-      headers: { "Content-Type": "application/json", ...(S.token ? { Authorization: "Bearer " + S.token } : {}) },
+      headers: {
+        "Content-Type": "application/json",
+        "X-App-Mode": isStandalone() ? "standalone" : "browser", // 홈 화면 앱으로 열었는지 (개인용 관리자 통계용)
+        ...(S.token ? { Authorization: "Bearer " + S.token } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -1184,6 +1188,8 @@ document.addEventListener("click", async (ev) => {
   else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);
   else if (a === "chat-delete") deleteChat(Number(el.dataset.id));
   else if (a === "chat-older") loadOlderChat();
+  else if (a === "admin-refresh") loadAdmin(store.get("adminCode") || "");
+  else if (a === "admin-logout") { store.del("adminCode"); renderAdminLogin(); }
   else if (a === "show-code") openRecoveryInfo();
   else if (a === "copy-code") {
     try { await navigator.clipboard.writeText(S.me.recoveryCode); toast("복사했어요."); } catch { toast("길게 눌러 직접 복사해 주세요."); }
@@ -1223,7 +1229,8 @@ document.addEventListener("input", (ev) => {
 document.addEventListener("submit", async (ev) => {
   const f = ev.target;
   ev.preventDefault();
-  if (f.id === "chat-form") sendChat(f);
+  if (f.id === "admin-form") loadAdmin(f.code.value.trim());
+  else if (f.id === "chat-form") sendChat(f);
   else if (f.id === "join-form") submitJoin(f);
   else if (f.id === "pick-name-form") {
     const name = f.name.value.trim();
@@ -1260,8 +1267,69 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// ── 관리자 통계 (개인용, 주소 끝에 ?admin) ─────────────
+function agoText(iso) {
+  if (!iso) return "없음";
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (min < 1) return "방금";
+  if (min < 60) return `${min}분 전`;
+  if (min < 60 * 24) return `${Math.round(min / 60)}시간 전`;
+  return `${Math.round(min / 60 / 24)}일 전`;
+}
+
+function renderAdminLogin(message = "") {
+  $("#app").innerHTML = `
+    <header class="top"><h1>관리자 통계</h1></header>
+    <form class="card" id="admin-form">
+      <label class="field"><span>관리자 코드</span>
+        <input class="input" name="code" type="password" autocomplete="off" required></label>
+      <button class="btn block" type="submit">보기</button>
+      ${message ? `<p class="hint error">${esc(message)}</p>` : ""}
+    </form>`;
+}
+
+async function loadAdmin(code) {
+  $("#app").innerHTML = `<header class="top"><h1>관리자 통계</h1></header><p class="empty">불러오는 중…</p>`;
+  let res;
+  try {
+    res = await fetch("/api/admin/stats", { headers: { "X-Admin-Code": encodeURIComponent(code) } });
+  } catch { renderAdminLogin("인터넷 연결을 확인해 주세요."); return; }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { store.del("adminCode"); renderAdminLogin(data.error || "볼 수 없어요."); return; }
+  store.set("adminCode", code);
+  const { summary: sm, users } = data;
+  const stat = (n, label) => `<div><b>${n}</b><span>${label}</span></div>`;
+  const rows = [...users].sort((a, b) => (b.lastSeenAt || "").localeCompare(a.lastSeenAt || "")).map((u) => `
+    <li class="admin-user">
+      <div class="line1"><span class="name">#${u.no} ${esc(u.name)}</span>
+        <span class="chips">${u.appFirstAt ? `<span class="chip">📱 앱</span>` : `<span class="chip gold">🌐 웹만</span>`}${u.push ? ` <span class="chip">🔔</span>` : ""}</span></div>
+      <div class="sub">${esc(ROADMAPS[u.roadmap]?.name || u.roadmap)}${isFixed(u.roadmap) ? "" : ` · 하루 ${u.perDay}장`} · 체크 ${u.checked}장</div>
+      <div class="sub">가입 ${u.createdAt ? niceDate(kstDateOf(u.createdAt)) : "-"} · 마지막 접속 ${agoText(u.lastSeenAt)}${u.appLastAt ? ` · 앱으로 ${agoText(u.appLastAt)}` : ""}</div>
+    </li>`).join("");
+  $("#app").innerHTML = `
+    <header class="top"><h1>관리자 통계</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>
+    <div class="admin-stats">
+      ${stat(sm.total, "전체 사용자")}
+      ${stat(sm.installed, "앱으로 연 사람")}
+      ${stat(sm.installed7, "앱 · 최근 7일")}
+      ${stat(sm.active1, "최근 1일 접속")}
+      ${stat(sm.active7, "최근 7일 접속")}
+      ${stat(sm.push, "알림 켬")}
+    </div>
+    <p class="mm-months mt">${ROADMAP_ORDER.map((id) => `<span class="chip">${esc(ROADMAPS[id].name)} ${sm.byRoadmap[id] || 0}</span>`).join(" ")}</p>
+    <h2 class="section">사용자 <small>최근 접속 순 · 이름 일부 가림</small></h2>
+    <ul class="card list admin-list">${rows || `<p class="empty">아직 없어요.</p>`}</ul>
+    <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (2026년 10월 2일 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
+    <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>`;
+}
+
 // ── 시작 ──────────────────────────────────────────────
 async function start() {
+  if (new URLSearchParams(location.search).has("admin")) {
+    const code = store.get("adminCode");
+    if (code) loadAdmin(code); else renderAdminLogin();
+    return;
+  }
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   const params = new URLSearchParams(location.search);
   const invite = params.get("invite");
