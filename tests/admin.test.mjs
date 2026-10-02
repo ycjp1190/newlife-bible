@@ -104,3 +104,19 @@ test("관리자 화면은 홈 화면에 따로 추가할 수 있게 이름·아�
   assert.equal(await get("/admin.webmanifest"), "asset:/personal/admin.webmanifest");
   assert.equal(await get("/icons/admin-192.png"), "asset:/personal/icons/admin-192.png");
 });
+
+test("관리자 앱 주소: 관리자 기능만 열리고 첫 화면이 관리자 앱", async () => {
+  const html = '<title>말씀 읽고 새 인생</title><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icons/icon-192.png"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="말씀 새 인생">';
+  const env = { DB: createLocalDB({ mode: "personal" }), MODE: "personal", ADMIN_APP: "1", ADMIN_CODE: "c", ASSETS: { fetch: (req) => {
+    const p = new URL(req.url).pathname;
+    return p === "/" ? new Response(html, { headers: { "Content-Type": "text/html" } }) : new Response(`asset:${p}`);
+  } } };
+  const go = async (path, init = {}) => worker.fetch(new Request("https://admin.test" + path, init), env, { waitUntil() {} });
+  const index = await (await go("/")).text();
+  assert.match(index, /name="admin-app"/);
+  assert.match(index, /content="새인생 관리자"/);
+  assert.equal(await (await go("/manifest.webmanifest")).text(), "asset:/personal/admin.webmanifest");
+  assert.equal((await go("/api/admin/stats", { headers: { "X-Admin-Code": "c" } })).status, 200);
+  assert.equal((await go("/api/join", { method: "POST", body: JSON.stringify({ name: "x", start_date: "2026-10-01" }) })).status, 404);
+  assert.equal((await go("/api/state")).status, 404);
+});

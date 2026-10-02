@@ -12,7 +12,7 @@
     "db:personal:remote": "wrangler d1 execute malsseum-personal --env personal --remote --file schema-personal.sql && wrangler d1 execute malsseum-personal --env personal --remote --file data/seed.sql && wrangler d1 migrations apply malsseum-personal --env personal --remote",
     "dev": "deno run -A scripts/local-server.mjs",
     "dev:personal": "deno run -A scripts/local-server.mjs personal",
-    "deploy": "wrangler deploy && wrangler deploy --env personal"
+    "deploy": "wrangler deploy && wrangler deploy --env personal && wrangler deploy --env admin"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

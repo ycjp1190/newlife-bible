@@ -70,3 +70,28 @@ MODE = "personal"
 TEST_NAMES = "예찬"
 VAPID_PUBLIC_KEY = "BNudWbT87Efvz4qX2Ddae6DKyTC-bgJr3mvBdZmCxz8026QTlYCDRcGBpeU5t403fWWQdnpcdVN8B6T0kGxtdR0"
 VAPID_SUBJECT = "https://malsseum-personal.newlife-bible.workers.dev"
+
+# ── 개인용 관리자 앱 (별도 주소라 갤럭시에서도 따로 설치됨) ─────────
+# 개인용과 같은 데이터베이스를 보지만 관리자 화면·관리자 API 만 연다. 알림 예약 실행 없음.
+[env.admin]
+name = "malsseum-admin"
+
+[env.admin.assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/", "/index.html", "/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest", "/admin.webmanifest"]
+
+[[env.admin.d1_databases]]
+binding = "DB"
+database_name = "malsseum-personal"
+database_id = "7fe7c2d9-2cee-4944-b236-51c74dfc9507"
+
+[env.admin.triggers]
+crons = []
+
+# 비밀값 ADMIN_CODE 는 배포 때 GitHub 비밀값에서 넣는다.
+[env.admin.vars]
+MODE = "personal"
+ADMIN_APP = "1"
+TEST_NAMES = "예찬"

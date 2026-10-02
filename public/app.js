@@ -1335,13 +1335,16 @@ async function loadAdmin(code) {
     <ul class="card list admin-list">${rows || `<p class="empty">아직 없어요.</p>`}</ul>
     ${testRows ? `<h2 class="section">테스트 계정 <small>통계에서 빠짐 · ${sm.tests}개</small></h2><ul class="card list admin-list">${testRows}</ul>` : ""}
     <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (2026년 10월 2일 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
-    ${isStandalone() ? "" : `<p class="hint">💡 이 화면을 <b>홈 화면에 추가</b>하면 '새인생 관리자' 앱으로 바로 열 수 있어요.</p>`}
+    ${document.querySelector('meta[name="admin-app"]')
+      ? (isStandalone() ? "" : `<p class="hint">💡 이 화면을 <b>홈 화면에 추가</b>(갤럭시: 메뉴 → 앱 설치)하면 '새인생 관리자' 앱으로 바로 열 수 있어요.</p>`)
+      : `<p class="hint">💡 관리자 앱으로 설치하려면 <a href="https://malsseum-admin.newlife-bible.workers.dev/">malsseum-admin.newlife-bible.workers.dev</a> 를 열어 홈 화면에 추가하세요. (개인용 앱과 주소가 달라 따로 설치돼요)</p>`}
     <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>`;
 }
 
 // ── 시작 ──────────────────────────────────────────────
 async function start() {
-  if (new URLSearchParams(location.search).has("admin")) {
+  // 관리자 앱 주소(malsseum-admin)이거나 개인용 주소 끝에 ?admin
+  if (document.querySelector('meta[name="admin-app"]') || new URLSearchParams(location.search).has("admin")) {
     const code = store.get("adminCode");
     if (code) loadAdmin(code); else renderAdminLogin();
     return;

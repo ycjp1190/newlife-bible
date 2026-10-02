@@ -28,6 +28,8 @@ const nowIso = () => new Date().toISOString();
 const TIME_RE = /^([01]\d|2[0-3]):[0-5][05]$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const isPersonal = (env) => env.MODE === "personal";
+// 개인용 관리자 앱(별도 주소): 관리자 화면·관리자 API 만 연다
+const isAdminApp = (env) => env.ADMIN_APP === "1";
 
 // 실시간 대화방: 대화 탭을 연 사람들의 웹소켓을 붙잡고 있다가, 무언가 바뀌면 "changed" 신호를 보낸다.
 // 앱은 신호를 받으면 /api/chat 으로 바뀐 내용을 가져온다. (잠자기 방식이라 연결만 유지할 때는 거의 비용 없음)
@@ -83,6 +85,7 @@ export default {
     }
   },
   async scheduled(event, env, ctx) {
+    if (isAdminApp(env)) return;
     ctx.waitUntil(runNotifications(env, event.scheduledTime || Date.now()));
   },
 };
@@ -92,16 +95,21 @@ export default {
 function serveAsset(request, env, url) {
   const p = url.pathname;
   if (p.startsWith("/personal/")) return new Response("Not found", { status: 404 });
+  if (isAdminApp(env) && p === "/manifest.webmanifest") {
+    return env.ASSETS.fetch(new Request(new URL("/personal/admin.webmanifest", url), request));
+  }
   if (isPersonal(env) && (p === "/manifest.webmanifest" || p === "/admin.webmanifest" || p.startsWith("/icons/"))) {
     return env.ASSETS.fetch(new Request(new URL("/personal" + p, url), request));
   }
-  if (isPersonal(env) && (p === "/" || p === "/index.html")) return personalIndex(request, env, url.searchParams.has("admin"));
+  if (isPersonal(env) && (p === "/" || p === "/index.html")) {
+    return personalIndex(request, env, isAdminApp(env) || url.searchParams.has("admin"), isAdminApp(env));
+  }
   return env.ASSETS.fetch(request);
 }
 
 // 개인 모드 첫 화면: 브라우저 탭 제목과 아이폰 홈 화면 이름에 "개인용"을 붙인다
 // 관리자 주소(?admin)는 홈 화면에 따로 추가할 수 있게 이름·아이콘·manifest 를 관리자용으로 바꾼다
-async function personalIndex(request, env, admin = false) {
+async function personalIndex(request, env, admin = false, adminApp = false) {
   const res = await env.ASSETS.fetch(request);
   if (!res.ok || !(res.headers.get("Content-Type") || "").includes("text/html")) return res;
   let html = await res.text();
@@ -111,7 +119,7 @@ async function personalIndex(request, env, admin = false) {
       .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="새인생 관리자"')
       .replace('<link rel="manifest" href="/manifest.webmanifest">', '<link rel="manifest" href="/admin.webmanifest">')
       .replace('<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">', '<link rel="apple-touch-icon" href="/icons/admin-apple-touch-icon.png">')
-      .replace('<link rel="icon" href="/icons/icon-192.png">', '<link rel="icon" href="/icons/admin-192.png">')
+      .replace('<link rel="icon" href="/icons/icon-192.png">', `<link rel="icon" href="/icons/admin-192.png">${adminApp ? '<meta name="admin-app" content="1">' : ""}`)
     : html
       .replace("<title>말씀 읽고 새 인생</title>", "<title>말씀 읽고 새 인생 (개인용)</title>")
       .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="말씀 새 인생 개인용"');
@@ -363,6 +371,9 @@ const normalizeCode = (code) => {
 async function handleApi(request, env, url, ctx) {
   const path = url.pathname.slice(4); // "/api" 제거
   const method = request.method;
+
+  // 관리자 앱 주소에서는 관리자 기능만
+  if (isAdminApp(env) && !(path === "/config" || path.startsWith("/admin/"))) throw new HttpError(404, "없는 요청이에요.");
 
   // 앱 화면이 어떤 모드로 그릴지 알려 준다 (입장 전에도 필요)
   if (path === "/config" && method === "GET") {
