@@ -1,5 +1,5 @@
 // 진도 계산과 알림 대상 판단 (DB와 무관한 순수 함수 — 테스트하기 쉽게 분리)
-import { chapterKey, dayIndex, formatChapters, isDayDone, streakDays } from "../public/shared/bible.js";
+import { chapterKey, dateOfDay, dayIndex, formatChapters, isDayDone, streakDays } from "../public/shared/bible.js";
 
 export const SLOTS = ["morning", "lunch", "evening"];
 const CATCH_UP_MINUTES = 60; // 서버 예약 실행이 늦어져도 60분 안이면 보낸다
@@ -12,11 +12,16 @@ export function progress(plan, startDate, today, checked) {
   const todayDay = startDate ? dayIndex(startDate, today) : null;
   const done = (d) => isDayDone(d.chapters, checked.get(d.day) || new Set());
   const missed = [];
+  const missedDetail = []; // 어제 이전 날 중 아직 체크 안 한 장: [{ day, remaining: [장...] }]
   let doneDays = 0;
   for (const d of plan) {
     const ok = done(d);
     if (ok) doneDays++;
-    else if (todayDay !== null && d.day < todayDay) missed.push(d.day);
+    else if (todayDay !== null && d.day < todayDay) {
+      missed.push(d.day);
+      const set = checked.get(d.day) || new Set();
+      missedDetail.push({ day: d.day, remaining: d.chapters.filter((c) => !set.has(chapterKey(c))) });
+    }
   }
   const todayPlan = todayDay >= 1 && todayDay <= total ? plan[todayDay - 1] : null;
   let todayRemaining = [];
@@ -25,12 +30,26 @@ export function progress(plan, startDate, today, checked) {
     todayRemaining = todayPlan.chapters.filter((c) => !set.has(chapterKey(c)));
   }
   return {
-    total, todayDay, doneDays, missed,
+    total, todayDay, doneDays, missed, missedDetail,
+    missedChapters: missedDetail.reduce((n, m) => n + m.remaining.length, 0),
     todayChapters: todayPlan ? todayPlan.chapters : [],
     todayRemaining,
     todayDone: todayPlan ? todayRemaining.length === 0 : null,
     streak: streakDays(todayDay, total, (day) => done(plan[day - 1])),
   };
+}
+
+// 밀린 장을 달별로 묶기 (그날의 날짜 기준) → [{ month: "2026-10", chapters, days }] 최근 달 먼저
+export function missedByMonth(missedDetail, startDate) {
+  const months = new Map();
+  for (const m of missedDetail) {
+    const key = dateOfDay(startDate, m.day).slice(0, 7);
+    const cur = months.get(key) || { month: key, chapters: 0, days: 0 };
+    cur.chapters += m.remaining.length;
+    cur.days += 1;
+    months.set(key, cur);
+  }
+  return [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
 
 // 지금(nowHHMM) 보내야 할 알림 칸 목록. sent: Set<slot> (오늘 이미 보낸 칸)

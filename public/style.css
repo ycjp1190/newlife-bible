@@ -242,3 +242,15 @@ canvas.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointe
 .member .line1 .chips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 @keyframes pop { from { transform: scale(.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .done-banner { animation: none; } }
+
+/* 함께: 사람 누르면 밀린 장 자세히 */
+.member[data-action="member"] { cursor: pointer; border-radius: 12px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; transition: background .15s; }
+.member[data-action="member"]:active { background: var(--accent-soft); }
+.member .line2 { align-items: center; }
+.member .chev { color: var(--muted); font-size: 18px; line-height: 1; margin-left: 4px; vertical-align: -1px; }
+.mm-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.mm-stats > div { background: var(--warn-soft); border-radius: 12px; padding: 12px; text-align: center; }
+.mm-stats b { display: block; font-size: 22px; color: var(--warn); }
+.mm-stats span { font-size: 13px; color: var(--muted); }
+.mm-months { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
+.missed-list .row .mark { color: var(--warn); font-weight: 700; min-width: 40px; }

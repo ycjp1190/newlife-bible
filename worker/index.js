@@ -7,12 +7,12 @@
 // - 모임 모드(기본): 초대 코드로 입장, 시작일·읽기표를 모두가 함께 씀 (schema.sql)
 // - 개인 모드(MODE=personal): 코드 없이 시작, 사람마다 시작일·읽기표가 따로 (schema-personal.sql)
 import {
-  dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
+  dateOfDay, dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
 } from "../public/shared/bible.js";
 import {
   buildPlan, fixedDays, isFixed, isRoadmap, ROADMAPS, yearLength,
 } from "../public/shared/roadmaps.js";
-import { buildMessage, dueSlots, progress, SLOTS } from "./logic.js";
+import { buildMessage, dueSlots, missedByMonth, progress, SLOTS } from "./logic.js";
 import { b64urlEncode, sendPush } from "./push.js";
 
 class HttpError extends Error {
@@ -307,9 +307,11 @@ async function handleApi(request, env, url) {
     return json({
       members: members.map((m) => {
         const p = progress(plan, startDate, today, checks.get(m.id) || new Map());
+        const thisMonth = missedByMonth(p.missedDetail, startDate).find((x) => x.month === today.slice(0, 7));
         return {
           id: m.id, name: m.name, lastSeenAt: m.last_seen_at,
           doneDays: p.doneDays, total: p.total, missedDays: p.missed.length,
+          missedChapters: p.missedChapters, thisMonth: thisMonth || { chapters: 0, days: 0 },
           todayDone: p.todayDone, streak: p.streak,
           todayChecked: p.todayChapters.length - p.todayRemaining.length,
           todayTotal: p.todayChapters.length,
@@ -337,6 +339,22 @@ async function handleApi(request, env, url) {
         `${planText(me.roadmap, me.per_day)} (${me.start_date} 시작)`, `${planText(roadmap, perDay)} (${startDate} 시작)`),
     ]);
     return json({ ok: true });
+  }
+
+  // 함께 읽기: 한 사람의 밀린 장 자세히 (모임 모드 전용, 벌금 정산용)
+  const memberMatch = path.match(/^\/members\/(\d+)$/);
+  if (memberMatch && method === "GET" && !isPersonal(env)) {
+    const id = Number(memberMatch[1]);
+    const m = await env.DB.prepare("SELECT id, name FROM members WHERE id = ?").bind(id).first();
+    if (!m) throw new HttpError(404, "그런 사람이 없어요.");
+    const [plan, startDate, checks] = await Promise.all([loadPlan(env, me), getStartDate(env, me), loadChecks(env, id)]);
+    const p = progress(plan, startDate, kstToday(), checks.get(id) || new Map());
+    return json({
+      id: m.id, name: m.name, doneDays: p.doneDays, total: p.total, streak: p.streak,
+      missedDays: p.missed.length, missedChapters: p.missedChapters,
+      months: startDate ? missedByMonth(p.missedDetail, startDate) : [],
+      missed: p.missedDetail.map((x) => ({ ...x, date: dateOfDay(startDate, x.day) })).reverse(),
+    });
   }
 
   // 하루 범위 수정

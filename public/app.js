@@ -517,7 +517,7 @@ function renderTogether() {
   if (!list) body = `<p class="empty">불러오는 중…</p>`;
   else if (!list.length) body = `<p class="empty">아직 아무도 없어요.</p>`;
   else {
-    const sorted = [...list].sort((a, b) => a.missedDays - b.missedDays || b.doneDays - a.doneDays || a.name.localeCompare(b.name, "ko"));
+    const sorted = [...list].sort((a, b) => (a.missedChapters ?? 0) - (b.missedChapters ?? 0) || b.doneDays - a.doneDays || a.name.localeCompare(b.name, "ko"));
     body = sorted.map((m) => {
       // 진행률은 항상 소수점 두 자리 (1/397일 = 0.25%), 1일이라도 읽었으면 막대가 보이게
       const raw = m.total ? (m.doneDays / m.total) * 100 : 0;
@@ -525,19 +525,54 @@ function renderTogether() {
       const bar = raw > 0 ? Math.max(raw, 2) : 0;
       const today = m.todayTotal ? (m.todayDone ? `<span class="chip done">🎉 오늘 완료</span>` : `<span class="chip gold">오늘 ${m.todayChecked}/${m.todayTotal}</span>`) : "";
       const fire = m.streak >= 2 ? ` <span class="chip fire">🔥 ${m.streak}일</span>` : "";
-      const missed = m.missedDays ? `<span class="chip warn">밀린 날 ${m.missedDays}일</span>` : `<span class="chip">밀린 날 없음</span>`;
-      return `<div class="member">
+      const missed = m.missedDays ? `<span class="chip warn">밀린 ${m.missedChapters}장 · ${m.missedDays}일</span>` : `<span class="chip">밀린 날 없음</span>`;
+      const month = m.thisMonth?.chapters ? ` · 이번 달 밀린 ${m.thisMonth.chapters}장` : "";
+      return `<div class="member" role="button" tabindex="0" data-action="member" data-id="${m.id}" aria-label="${esc(m.name)} 자세히 보기">
         <div class="line1"><span class="name">${esc(m.name)}${m.id === S.me.id ? ` <span class="me">(나)</span>` : ""}${fire}</span><span class="chips">${missed} ${today}</span></div>
         <div class="progress" aria-label="진행률 ${pct}%"><i style="width:${bar}%"></i></div>
-        <div class="line2"><span>${m.doneDays} / ${m.total}일 완료</span><span>${pct}%</span></div>
+        <div class="line2"><span>${m.doneDays} / ${m.total}일 완료${month}</span><span>${pct}% <span class="chev" aria-hidden="true">›</span></span></div>
       </div>`;
     }).join("");
   }
   $("#app").innerHTML = `
     <header class="top"><h1>함께 읽기</h1><span class="date">${list ? `${list.length}명` : ""}</span></header>
     <div class="card">${body}</div>
-    <p class="hint">밀린 날 = 오늘 이전 날짜 중 아직 다 읽지 못한 날 수</p>
+    <p class="hint">이름을 누르면 어느 장을 밀렸는지 볼 수 있어요.<br>밀린 장 = 어제까지의 날짜 중 아직 체크하지 않은 장 (나중에 체크하면 빠져요)</p>
     ${navHtml()}`;
+}
+
+// 한 사람의 밀린 장 자세히 (벌금 정산용)
+const monthName = (ym) => (ym.slice(0, 4) === S.today.slice(0, 4) ? `${Number(ym.slice(5))}월` : `${ym.slice(0, 4)}년 ${Number(ym.slice(5))}월`);
+
+async function openMember(id) {
+  openSheet(`<h3>불러오는 중…</h3>`);
+  let d;
+  try { d = await api(`/members/${id}`); } catch (e) { closeSheet(); toast(e.message); return; }
+  if (!sheetOpen()) return;
+  const raw = d.total ? (d.doneDays / d.total) * 100 : 0;
+  const thisMonth = S.today.slice(0, 7);
+  const byMonth = new Map();
+  for (const x of d.missed) {
+    const key = x.date.slice(0, 7);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key).push(x);
+  }
+  const monthChips = d.months.map((m) => `<span class="chip ${m.month === thisMonth ? "warn" : ""}">${monthName(m.month)} ${m.chapters}장 (${m.days}일)</span>`).join(" ");
+  const lists = [...byMonth.entries()].map(([ym, rows]) => `
+    <h2 class="section">${monthName(ym)}${ym === thisMonth ? " (이번 달)" : ""} <small>${rows.reduce((n, x) => n + x.remaining.length, 0)}장</small></h2>
+    <ul class="list missed-list">${rows.map((x) => `<li class="row">
+      <span class="main"><span class="title">DAY ${x.day} · ${niceDate(x.date)}</span>
+      <span class="sub">${esc(formatChapters(x.remaining))}</span></span>
+      <span class="mark">${x.remaining.length}장</span></li>`).join("")}</ul>`).join("");
+  openSheet(`
+    <h3>${esc(d.name)}${d.id === S.me.id ? ` <span class="muted" style="font-size:15px">(나)</span>` : ""}</h3>
+    <p class="muted" style="margin:0 0 12px">${d.streak >= 2 ? `🔥 ${d.streak}일 연속 · ` : ""}${d.doneDays} / ${d.total}일 완료 (${raw.toFixed(2)}%)</p>
+    <div class="mm-stats">
+      <div><b>${d.missedChapters}장</b><span>밀린 장</span></div>
+      <div><b>${d.missedDays}일</b><span>밀린 날</span></div>
+    </div>
+    ${d.missed.length ? `<p class="mm-months">${monthChips}</p>${lists}` : `<p class="empty">밀린 장이 없어요 🙌</p>`}
+    <p class="hint">어제까지의 날짜 중 아직 체크하지 않은 장이에요. 나중에 체크하면 목록에서 빠져요.</p>`);
 }
 
 // ── 화면: 전체 일정 ───────────────────────────────────
@@ -863,6 +898,7 @@ document.addEventListener("click", async (ev) => {
   else if (a === "pick-back") pickGo(-1);
   else if (a === "pick-submit") submitPick(el);
   else if (a === "plan-change") openPlanChange();
+  else if (a === "member") openMember(Number(el.dataset.id));
   else if (a === "show-code") openRecoveryInfo();
   else if (a === "copy-code") {
     try { await navigator.clipboard.writeText(S.me.recoveryCode); toast("복사했어요."); } catch { toast("길게 눌러 직접 복사해 주세요."); }
