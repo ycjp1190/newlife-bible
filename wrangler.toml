@@ -50,7 +50,7 @@ directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 # 개인용은 아이콘·manifest 도 Worker 가 public/personal/ 의 것으로 바꿔 보여 준다
-run_worker_first = ["/", "/index.html", "/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest"]
+run_worker_first = ["/", "/index.html", "/api/*", "/personal/*", "/icons/*", "/manifest.webmanifest", "/admin.webmanifest"]
 
 # 데이터베이스 (schema-personal.sql)
 [[env.personal.d1_databases]]
@@ -66,5 +66,7 @@ crons = ["*/5 * * * *"]
 # 비밀값 VAPID_PRIVATE_KEY 는 `wrangler secret put VAPID_PRIVATE_KEY --env personal` 로 넣는다. (초대 코드 없음)
 [env.personal.vars]
 MODE = "personal"
+# 운영자 확인용 이름 — 관리자 통계·인원수에서 뺀다 (쉼표로 여러 개)
+TEST_NAMES = "예찬"
 VAPID_PUBLIC_KEY = "BNudWbT87Efvz4qX2Ddae6DKyTC-bgJr3mvBdZmCxz8026QTlYCDRcGBpeU5t403fWWQdnpcdVN8B6T0kGxtdR0"
 VAPID_SUBJECT = "https://malsseum-personal.newlife-bible.workers.dev"

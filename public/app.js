@@ -1190,6 +1190,16 @@ document.addEventListener("click", async (ev) => {
   else if (a === "chat-older") loadOlderChat();
   else if (a === "admin-refresh") loadAdmin(store.get("adminCode") || "");
   else if (a === "admin-logout") { store.del("adminCode"); renderAdminLogin(); }
+  else if (a === "admin-delete") {
+    const code = store.get("adminCode") || "";
+    if (!confirm(`#${el.dataset.id} ${el.dataset.name} 계정과 모든 기록을 지울까요? 되돌릴 수 없어요.`)) return;
+    try {
+      const res = await fetch("/api/admin/delete", { method: "POST", headers: { "Content-Type": "application/json", "X-Admin-Code": encodeURIComponent(code) }, body: JSON.stringify({ id: Number(el.dataset.id) }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "지우지 못했어요.");
+      toast("지웠어요.");
+      loadAdmin(code);
+    } catch (e) { toast(e.message); }
+  }
   else if (a === "show-code") openRecoveryInfo();
   else if (a === "copy-code") {
     try { await navigator.clipboard.writeText(S.me.recoveryCode); toast("복사했어요."); } catch { toast("길게 눌러 직접 복사해 주세요."); }
@@ -1299,13 +1309,17 @@ async function loadAdmin(code) {
   store.set("adminCode", code);
   const { summary: sm, users } = data;
   const stat = (n, label) => `<div><b>${n}</b><span>${label}</span></div>`;
-  const rows = [...users].sort((a, b) => (b.lastSeenAt || "").localeCompare(a.lastSeenAt || "")).map((u) => `
-    <li class="admin-user">
-      <div class="line1"><span class="name">#${u.no} ${esc(u.name)}</span>
+  const rowHtml = (u) => `
+    <li class="admin-user ${u.test ? "is-test" : ""}">
+      <div class="line1"><span class="name">#${u.no} ${esc(u.name)}${u.test ? ` <span class="chip warn">테스트</span>` : ""}</span>
         <span class="chips">${u.appFirstAt ? `<span class="chip">📱 앱</span>` : `<span class="chip gold">🌐 웹만</span>`}${u.push ? ` <span class="chip">🔔</span>` : ""}</span></div>
       <div class="sub">${esc(ROADMAPS[u.roadmap]?.name || u.roadmap)}${isFixed(u.roadmap) ? "" : ` · 하루 ${u.perDay}장`} · 체크 ${u.checked}장</div>
       <div class="sub">가입 ${u.createdAt ? niceDate(kstDateOf(u.createdAt)) : "-"} · 마지막 접속 ${agoText(u.lastSeenAt)}${u.appLastAt ? ` · 앱으로 ${agoText(u.appLastAt)}` : ""}</div>
-    </li>`).join("");
+      <button class="btn ghost admin-del" data-action="admin-delete" data-id="${u.no}" data-name="${esc(u.name)}">삭제</button>
+    </li>`;
+  const byRecent = (a, b) => (b.lastSeenAt || "").localeCompare(a.lastSeenAt || "");
+  const rows = users.filter((u) => !u.test).sort(byRecent).map(rowHtml).join("");
+  const testRows = users.filter((u) => u.test).sort(byRecent).map(rowHtml).join("");
   $("#app").innerHTML = `
     <header class="top"><h1>관리자 통계</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>
     <div class="admin-stats">
@@ -1319,7 +1333,9 @@ async function loadAdmin(code) {
     <p class="mm-months mt">${ROADMAP_ORDER.map((id) => `<span class="chip">${esc(ROADMAPS[id].name)} ${sm.byRoadmap[id] || 0}</span>`).join(" ")}</p>
     <h2 class="section">사용자 <small>최근 접속 순</small></h2>
     <ul class="card list admin-list">${rows || `<p class="empty">아직 없어요.</p>`}</ul>
+    ${testRows ? `<h2 class="section">테스트 계정 <small>통계에서 빠짐 · ${sm.tests}개</small></h2><ul class="card list admin-list">${testRows}</ul>` : ""}
     <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (2026년 10월 2일 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
+    ${isStandalone() ? "" : `<p class="hint">💡 이 화면을 <b>홈 화면에 추가</b>하면 '새인생 관리자' 앱으로 바로 열 수 있어요.</p>`}
     <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>`;
 }
 

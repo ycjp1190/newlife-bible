@@ -315,3 +315,6 @@ nav.tabs button { position: relative; }
 .admin-user .line1 { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
 .admin-user .name { font-weight: 700; }
 .admin-user .sub { font-size: 13px; color: var(--muted); }
+.admin-user { position: relative; }
+.admin-user .admin-del { position: absolute; right: -6px; bottom: 6px; color: var(--warn); font-size: 13px; }
+.admin-user.is-test .name { color: var(--muted); }

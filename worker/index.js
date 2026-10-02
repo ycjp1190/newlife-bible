@@ -92,20 +92,29 @@ export default {
 function serveAsset(request, env, url) {
   const p = url.pathname;
   if (p.startsWith("/personal/")) return new Response("Not found", { status: 404 });
-  if (isPersonal(env) && (p === "/manifest.webmanifest" || p.startsWith("/icons/"))) {
+  if (isPersonal(env) && (p === "/manifest.webmanifest" || p === "/admin.webmanifest" || p.startsWith("/icons/"))) {
     return env.ASSETS.fetch(new Request(new URL("/personal" + p, url), request));
   }
-  if (isPersonal(env) && (p === "/" || p === "/index.html")) return personalIndex(request, env);
+  if (isPersonal(env) && (p === "/" || p === "/index.html")) return personalIndex(request, env, url.searchParams.has("admin"));
   return env.ASSETS.fetch(request);
 }
 
 // 개인 모드 첫 화면: 브라우저 탭 제목과 아이폰 홈 화면 이름에 "개인용"을 붙인다
-async function personalIndex(request, env) {
+// 관리자 주소(?admin)는 홈 화면에 따로 추가할 수 있게 이름·아이콘·manifest 를 관리자용으로 바꾼다
+async function personalIndex(request, env, admin = false) {
   const res = await env.ASSETS.fetch(request);
   if (!res.ok || !(res.headers.get("Content-Type") || "").includes("text/html")) return res;
-  const html = (await res.text())
-    .replace("<title>말씀 읽고 새 인생</title>", "<title>말씀 읽고 새 인생 (개인용)</title>")
-    .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="말씀 새 인생 개인용"');
+  let html = await res.text();
+  html = admin
+    ? html
+      .replace("<title>말씀 읽고 새 인생</title>", "<title>말씀 읽고 새 인생 관리자</title>")
+      .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="새인생 관리자"')
+      .replace('<link rel="manifest" href="/manifest.webmanifest">', '<link rel="manifest" href="/admin.webmanifest">')
+      .replace('<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">', '<link rel="apple-touch-icon" href="/icons/admin-apple-touch-icon.png">')
+      .replace('<link rel="icon" href="/icons/icon-192.png">', '<link rel="icon" href="/icons/admin-192.png">')
+    : html
+      .replace("<title>말씀 읽고 새 인생</title>", "<title>말씀 읽고 새 인생 (개인용)</title>")
+      .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="말씀 새 인생 개인용"');
   const headers = new Headers(res.headers);
   headers.delete("Content-Length");
   headers.delete("ETag");
@@ -255,11 +264,31 @@ function sameCode(a, b) {
 }
 
 // 관리자 통계 (개인 모드, ADMIN_CODE 가 설정된 경우만). 운영자 전용이라 실명을 보여 준다.
-async function adminStats(request, env) {
+function checkAdmin(request, env) {
   if (!isPersonal(env) || !env.ADMIN_CODE) throw new HttpError(404, "없는 요청이에요.");
   let given = request.headers.get("X-Admin-Code") || "";
   try { given = decodeURIComponent(given); } catch { /* 그대로 비교 */ }
   if (!sameCode(given, env.ADMIN_CODE)) throw new HttpError(403, "관리자 코드가 맞지 않아요.");
+}
+
+// 운영자 확인용 이름 (wrangler.toml 의 TEST_NAMES, 쉼표로 구분) → 통계·인원수에서 뺀다
+const testNames = (env) => new Set(String(env.TEST_NAMES || "").split(",").map((x) => x.trim()).filter(Boolean));
+
+// 관리자: 사용자 한 명과 그 기록을 모두 지운다 (되돌릴 수 없음)
+async function adminDelete(request, env) {
+  checkAdmin(request, env);
+  const { id } = await readBody(request);
+  if (!Number.isInteger(id)) throw new HttpError(400, "잘못된 요청이에요.");
+  const m = await env.DB.prepare("SELECT id FROM members WHERE id = ?").bind(id).first();
+  if (!m) throw new HttpError(404, "그런 사용자가 없어요.");
+  await env.DB.batch(["member_plan", "checks", "history", "push_subscriptions", "sent_log"]
+    .map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE member_id = ?`).bind(id))
+    .concat(env.DB.prepare("DELETE FROM members WHERE id = ?").bind(id)));
+  return json({ ok: true });
+}
+
+async function adminStats(request, env) {
+  checkAdmin(request, env);
   const { results } = await env.DB.prepare(
     `SELECT m.id, m.name, m.roadmap, m.per_day, m.start_date, m.created_at, m.last_seen_at, m.app_first_at, m.app_last_at,
        EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id) AS push,
@@ -272,12 +301,14 @@ async function adminStats(request, env) {
   const users = results.map((r) => ({
     no: r.id, name: r.name, roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date,
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, appFirstAt: r.app_first_at, appLastAt: r.app_last_at,
-    push: !!r.push, checked: r.checked,
+    push: !!r.push, checked: r.checked, test: testNames(env).has(r.name),
   }));
-  const count = (f) => users.filter(f).length;
+  const real = users.filter((u) => !u.test);
+  const count = (f) => real.filter(f).length;
   return json({
     summary: {
-      total: users.length,
+      total: real.length,
+      tests: users.length - real.length,
       installed: count((u) => u.appFirstAt),
       installed7: count((u) => u.appLastAt && u.appLastAt >= d7),
       active1: count((u) => u.lastSeenAt && u.lastSeenAt >= d1),
@@ -353,6 +384,7 @@ async function handleApi(request, env, url, ctx) {
 
   // 관리자 통계 (로그인 대신 관리자 코드)
   if (path === "/admin/stats" && method === "GET") return adminStats(request, env);
+  if (path === "/admin/delete" && method === "POST") return adminDelete(request, env);
 
   // 대화 실시간 연결 (모임 모드 전용)
   if (path === "/chat/ws") {
