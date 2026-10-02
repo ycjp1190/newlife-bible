@@ -298,3 +298,8 @@ nav.tabs button { position: relative; }
 .rx-big button { font-size: 30px; width: 64px; height: 64px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--bg); }
 .rx-big button.on { border-color: var(--accent); background: var(--accent-soft); }
 .rx-who li { font-size: 14.5px; }
+
+/* 카톡식 안 읽음 숫자: 시각 위에 노란 숫자 */
+.msg-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding-bottom: 2px; }
+.msg.mine .msg-meta { align-items: flex-end; }
+.unread-n { font-size: 11.5px; font-weight: 700; color: var(--gold); line-height: 1; }

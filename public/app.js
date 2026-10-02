@@ -22,7 +22,7 @@ const S = {
   vapid: null, loaded: false, tab: store.get("tab") || "today",
   mode: store.get("mode") || "group", joinView: "new",
   roadmap: "flow397", perDay: 3,
-  chatUnread: 0, chatDraft: "", chat: { msgs: [], loaded: false, more: false },
+  chatUnread: 0, chatDraft: "", chat: { msgs: [], loaded: false, more: false, reads: [] },
   pick: null, // 개인 모드 계획 고르기 { step, context: "join"|"change", name, roadmap, perDay, start }
   members: null, showAllMissed: false, push: "unknown",
 };
@@ -593,6 +593,11 @@ function reactionsHtml(m) {
   return `<div class="rx-row">${entries.map(([emoji, ids]) => `<button class="rx ${ids.includes(S.me.id) ? "on" : ""}" data-action="chat-react" data-id="${m.id}" data-emoji="${emoji}" aria-label="${emoji} ${ids.length}명">${emoji} ${ids.length}</button>`).join("")}</div>`;
 }
 
+function unreadCount(m) {
+  if (m.kind !== "text" || m.deleted) return 0;
+  return S.chat.reads.filter((r) => r.id !== m.member_id && (r.last_read || 0) < m.id).length;
+}
+
 function chatListHtml() {
   const c = S.chat;
   if (!c.loaded) return `<p class="empty">불러오는 중…</p>`;
@@ -617,7 +622,7 @@ function chatListHtml() {
       ${!mine && prevAuthor !== m.member_id ? `<div class="msg-name">${esc(m.name)}</div>` : ""}
       <div class="msg-row">
         <div class="bubble ${m.deleted ? "deleted" : ""}" data-action="chat-msg" data-id="${m.id}">${m.deleted ? "삭제된 메시지예요" : esc(m.body)}</div>
-        <span class="msg-time">${timeOf(m.created_at)}</span>
+        <span class="msg-meta">${unreadCount(m) ? `<b class="unread-n" aria-label="안 읽은 사람 ${unreadCount(m)}명">${unreadCount(m)}</b>` : ""}<span class="msg-time">${timeOf(m.created_at)}</span></span>
       </div>${reactionsHtml(m)}</div>`;
     prevAuthor = m.member_id;
   }
@@ -666,8 +671,8 @@ async function markChatRead() {
 
 async function loadChat() {
   try {
-    const { messages } = await api("/chat");
-    S.chat = { msgs: messages, loaded: true, more: messages.length >= 100 };
+    const { messages, reads } = await api("/chat");
+    S.chat = { msgs: messages, loaded: true, more: messages.length >= 100, reads: reads || [] };
     if (S.tab === "chat") { updateChatList({ toBottom: true }); markChatRead(); }
   } catch (e) { toast(e.message); }
 }
@@ -689,12 +694,14 @@ let chatPolling = false;
 async function pollChat() {
   if (chatPolling || !S.chat.loaded) return;
   chatPolling = true;
+  lastChatPoll = Date.now();
   try {
     const c = S.chat;
     const last = c.msgs.at(-1)?.id || 0;
     if (!last) { await loadChat(); return; }
-    const { messages, updates } = await api(`/chat?after=${last}&from=${c.msgs[0].id}`);
+    const { messages, updates, reads } = await api(`/chat?after=${last}&from=${c.msgs[0].id}`);
     let changed = messages.length > 0;
+    if (reads && JSON.stringify(reads) !== JSON.stringify(c.reads)) { c.reads = reads; changed = true; }
     for (const u of updates) {
       const i = c.msgs.findIndex((m) => m.id === u.id);
       if (i >= 0 && JSON.stringify(c.msgs[i]) !== JSON.stringify(u)) { c.msgs[i] = u; changed = true; }
@@ -705,25 +712,102 @@ async function pollChat() {
     if (fresh.length) markChatRead();
   } catch { /* 잠시 연결이 끊겨도 다음 번에 다시 */ } finally { chatPolling = false; }
 }
-// 대화 탭을 보고 있을 때만 4초마다 새 메시지 확인
+// ── 실시간 연결 (웹소켓) ──
+// 대화 탭을 보고 있을 때만 연결한다. 서버가 "changed" 신호를 보내면 바로 바뀐 내용을 가져온다.
+// 연결이 안 되면 2초마다, 연결돼 있으면 20초마다 안전 확인.
+let chatSocket = null;
+let chatRetry = null;
+let chatRetryDelay = 2000;
+let lastChatPoll = 0;
+const chatWanted = () => S.token && S.loaded && !personal() && S.tab === "chat" && document.visibilityState === "visible";
+const chatLive = () => chatSocket?.readyState === WebSocket.OPEN;
+
+function syncChatSocket() {
+  if (!chatWanted()) {
+    clearTimeout(chatRetry);
+    if (chatSocket) { chatSocket.onclose = null; chatSocket.close(); chatSocket = null; }
+    return;
+  }
+  if (chatSocket && chatSocket.readyState <= WebSocket.OPEN) return; // 연결 중이거나 연결됨
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  try {
+    chatSocket = new WebSocket(`${proto}://${location.host}/api/chat/ws?token=${encodeURIComponent(S.token)}`);
+  } catch { chatSocket = null; return; }
+  chatSocket.onopen = () => { chatRetryDelay = 2000; pollChat(); };
+  chatSocket.onmessage = (ev) => { if (ev.data === "changed") pollChat(); };
+  chatSocket.onerror = () => {};
+  chatSocket.onclose = () => {
+    chatSocket = null;
+    clearTimeout(chatRetry);
+    chatRetry = setTimeout(syncChatSocket, chatRetryDelay); // 끊기면 다시 연결 (점점 간격을 늘려 최대 30초)
+    chatRetryDelay = Math.min(chatRetryDelay * 2, 30000);
+  };
+}
+
 setInterval(() => {
-  if (S.token && S.loaded && !personal() && S.tab === "chat" && document.visibilityState === "visible") pollChat();
-}, 4000);
+  if (!chatWanted()) return;
+  syncChatSocket();
+  if (Date.now() - lastChatPoll >= (chatLive() ? 20000 : 2000)) pollChat();
+}, 1000);
+// 연결이 오래 조용하면 중간에서 끊길 수 있어 30초마다 신호
+setInterval(() => { if (chatLive()) chatSocket.send("ping"); }, 30000);
+
+// 한글 등 글자 조합 중인지 (조합 중에 보내면 마지막 글자가 빠지거나, 보낸 뒤 입력칸에 글이 되살아날 수 있음)
+let chatComposing = false;
+let chatSending = false;
+let lastSent = { text: "", at: 0 };
+document.addEventListener("compositionstart", (ev) => { if (ev.target.form?.id === "chat-form") chatComposing = true; });
+document.addEventListener("compositionend", (ev) => { if (ev.target.form?.id === "chat-form") chatComposing = false; });
+const waitComposition = () => new Promise((resolve) => {
+  if (!chatComposing) { resolve(); return; }
+  const until = Date.now() + 400;
+  const tick = () => (!chatComposing || Date.now() > until ? resolve() : setTimeout(tick, 20));
+  tick();
+});
+
+// 보낸 직후 키보드가 조합을 끝내며 보낸 글(또는 끝부분)을 다시 넣으면 지운다
+function clearResurrected(t) {
+  if (Date.now() - lastSent.at > 1500 || !t.value) return false;
+  const v = t.value.trim();
+  if (v && (v === lastSent.text || lastSent.text.endsWith(v))) {
+    t.value = "";
+    S.chatDraft = "";
+    autoGrow(t);
+    return true;
+  }
+  return false;
+}
 
 async function sendChat(form) {
+  if (chatSending) return;
   const t = form.body;
+  if (chatComposing) { t.blur(); await waitComposition(); } // 조합을 끝내고 완성된 글자를 읽는다
   const text = t.value.trim();
   if (!text) return;
+  chatSending = true;
   const btn = form.querySelector("button[type=submit]");
   btn.disabled = true;
+  // 서버에 보내기 전에 먼저 비운다 (실패하면 되돌림)
+  lastSent = { text, at: Date.now() };
+  t.value = "";
+  S.chatDraft = "";
+  autoGrow(t);
   try {
     const { message } = await api("/chat", { method: "POST", body: { body: text } });
     if (!S.chat.msgs.some((m) => m.id === message.id)) S.chat.msgs.push(message);
-    S.chatDraft = "";
-    t.value = "";
-    autoGrow(t);
     updateChatList({ toBottom: true });
-  } catch (e) { toast(e.message); } finally { btn.disabled = false; t.focus(); }
+  } catch (e) {
+    if (!t.value) { t.value = text; S.chatDraft = text; autoGrow(t); }
+    lastSent = { text: "", at: 0 };
+    toast(e.message);
+  } finally {
+    chatSending = false;
+    btn.disabled = false;
+    t.focus();
+    lastSent.at = Date.now();
+    setTimeout(() => clearResurrected(t), 50);
+    setTimeout(() => clearResurrected(t), 300);
+  }
 }
 
 function openChatMessage(id) {
@@ -998,6 +1082,7 @@ function render() {
   ({ today: renderToday, together: renderTogether, chat: renderChat, plan: renderPlan, settings: renderSettings }[S.tab] || renderToday)();
   const nav = $("nav.tabs");
   if (nav) document.documentElement.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
+  syncChatSocket();
 }
 
 // ── 이벤트 ────────────────────────────────────────────
@@ -1128,7 +1213,9 @@ document.addEventListener("change", (ev) => {
 });
 
 document.addEventListener("input", (ev) => {
-  if (ev.target.form?.id === "chat-form") { S.chatDraft = ev.target.value; autoGrow(ev.target); }
+  if (ev.target.form?.id === "chat-form") {
+    if (!clearResurrected(ev.target)) { S.chatDraft = ev.target.value; autoGrow(ev.target); }
+  }
   if (ev.target.form?.id === "day-form") previewDay(ev.target);
   if (ev.target.form?.id === "pick-name-form" && S.pick) S.pick.name = ev.target.value;
 });
@@ -1166,6 +1253,7 @@ document.addEventListener("submit", async (ev) => {
 
 // 앱으로 다시 돌아오면 최신 정보로 (날짜가 바뀌었을 수 있음)
 document.addEventListener("visibilitychange", () => {
+  syncChatSocket();
   if (document.visibilityState === "visible" && S.token && !sheetOpen()) {
     refresh();
     if (S.tab === "together") loadMembers();

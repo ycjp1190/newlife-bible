@@ -103,3 +103,30 @@ test("기존 모임 DB: 변경 파일을 적용해도 멤버·체크 그대로",
   assert.equal(s.chatUnread, 0);
   assert.equal(s.me.chat_push, true);
 });
+
+test("대화: 카톡식 안 읽음 숫자용 읽은 위치(reads)", async () => {
+  const call = makeApp();
+  const a = await join(call, "가");
+  const b = await join(call, "나");
+  const c = await join(call, "다");
+  const m = (await call("/api/chat", { method: "POST", token: a, body: { body: "안녕" } })).data.message;
+  const unread = async () => {
+    const { reads } = (await call("/api/chat", { token: a })).data;
+    return reads.filter((r) => r.id !== m.member_id && r.last_read < m.id).length;
+  };
+  assert.equal(await unread(), 2); // 나·다 안 읽음 (보낸 가는 제외)
+  await call("/api/chat/read", { method: "POST", token: b, body: { id: m.id } });
+  assert.equal(await unread(), 1);
+  await call("/api/chat/read", { method: "POST", token: c, body: { id: m.id } });
+  assert.equal(await unread(), 0);
+});
+
+test("대화 실시간 연결: 토큰 없으면 401, 개인 모드 404", async () => {
+  const call = makeApp();
+  assert.equal((await call("/api/chat/ws")).status, 401);
+  assert.equal((await call("/api/chat/ws?token=wrong")).status, 401);
+  const a = await join(call, "가");
+  assert.equal((await call(`/api/chat/ws?token=${a}`)).status, 404); // 검사 환경엔 실시간 대화방이 없음
+  const p = makeApp("personal");
+  assert.equal((await p("/api/chat/ws?token=x")).status, 404);
+});

@@ -27,6 +27,15 @@ migrations_dir = "migrations-group"
 [triggers]
 crons = ["*/5 * * * *"]
 
+# 대화 실시간 연결용 대화방 (모임용만 사용. Durable Object, 무료 플랜 SQLite 방식)
+[[durable_objects.bindings]]
+name = "CHAT"
+class_name = "ChatRoom"
+
+[[migrations]]
+tag = "v1-chat-room"
+new_sqlite_classes = ["ChatRoom"]
+
 # 공개해도 되는 값. 비밀값(VAPID_PRIVATE_KEY, INVITE_CODE)은 `wrangler secret put` 으로 넣는다.
 [vars]
 VAPID_PUBLIC_KEY = "BO_3V5cXzqCybefQIvBY2rN84ujPuZ1K5GXG4OKOJ1zpCuB0DfD7u7eX4CJmxBw8H-RM1xjsMggSK3o3PqoV1tQ"

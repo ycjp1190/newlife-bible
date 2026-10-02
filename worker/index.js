@@ -29,6 +29,47 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5][05]$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const isPersonal = (env) => env.MODE === "personal";
 
+// 실시간 대화방: 대화 탭을 연 사람들의 웹소켓을 붙잡고 있다가, 무언가 바뀌면 "changed" 신호를 보낸다.
+// 앱은 신호를 받으면 /api/chat 으로 바뀐 내용을 가져온다. (잠자기 방식이라 연결만 유지할 때는 거의 비용 없음)
+export class ChatRoom {
+  constructor(state) {
+    this.state = state;
+    // 앱이 30초마다 보내는 "ping" 에는 대화방을 깨우지 않고 자동으로 "pong" 응답
+    state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  async fetch(request) {
+    if (request.headers.get("Upgrade") === "websocket") {
+      const [client, server] = Object.values(new WebSocketPair());
+      this.state.acceptWebSocket(server);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    if (new URL(request.url).pathname === "/broadcast") {
+      const msg = await request.text();
+      for (const ws of this.state.getWebSockets()) {
+        try { ws.send(msg); } catch { /* 이미 끊긴 연결 */ }
+      }
+      return new Response("ok");
+    }
+    return new Response("Not found", { status: 404 });
+  }
+
+  webSocketMessage() { /* 앱 → 서버 메시지는 쓰지 않음 */ }
+
+  webSocketClose(ws, code) {
+    try { ws.close(code, "bye"); } catch { /* 이미 닫힘 */ }
+  }
+}
+
+// 대화방에 "바뀜" 신호 (실시간 연결이 없는 환경에서는 아무것도 안 함)
+function signalChat(env, ctx) {
+  if (!env.CHAT) return;
+  const job = env.CHAT.get(env.CHAT.idFromName("room"))
+    .fetch("https://chat-room/broadcast", { method: "POST", body: "changed" })
+    .catch(() => {});
+  if (ctx?.waitUntil) ctx.waitUntil(job);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -259,6 +300,17 @@ async function handleApi(request, env, url, ctx) {
     return json({ token: me.token, member: publicMember(me) });
   }
 
+  // 대화 실시간 연결 (모임 모드 전용)
+  if (path === "/chat/ws") {
+    if (isPersonal(env)) throw new HttpError(404, "없는 요청이에요.");
+    const token = url.searchParams.get("token") || "";
+    const who = token && await env.DB.prepare("SELECT id FROM members WHERE token = ?").bind(token).first();
+    if (!who) throw new HttpError(401, "다시 입장해 주세요.");
+    if (!env.CHAT) throw new HttpError(404, "실시간 연결을 쓸 수 없어요.");
+    if (request.headers.get("Upgrade") !== "websocket") throw new HttpError(426, "웹소켓 연결이 필요해요.");
+    return env.CHAT.get(env.CHAT.idFromName("room")).fetch(request);
+  }
+
   const me = await authMember(request, env);
 
   if (path === "/state" && method === "GET") {
@@ -292,7 +344,7 @@ async function handleApi(request, env, url, ctx) {
     } else if (checked) {
       await env.DB.prepare("INSERT OR IGNORE INTO checks (member_id, day, chapter, checked_at) VALUES (?, ?, ?, ?)")
         .bind(me.id, day, chapter, nowIso()).run();
-      await postDoneIfToday(env, me, day);
+      if (await postDoneIfToday(env, me, day)) signalChat(env, ctx);
     } else {
       await env.DB.prepare("DELETE FROM checks WHERE member_id = ? AND day = ? AND chapter = ?")
         .bind(me.id, day, chapter).run();
@@ -535,17 +587,18 @@ async function chatUnread(env, me) {
 // 오늘 분량을 다 체크한 순간 '읽기 완료' 소식 (한 사람당 하루 한 번, 지난 날 완료는 제외, 알림 없음)
 async function postDoneIfToday(env, me, day) {
   const startDate = await getStartDate(env, me);
-  if (!startDate || dayIndex(startDate, kstToday()) !== day) return;
+  if (!startDate || dayIndex(startDate, kstToday()) !== day) return false;
   const row = await getDayRow(env, me, day);
-  if (!row) return;
+  if (!row) return false;
   const chapters = JSON.parse(row.chapters);
-  if (!chapters.length) return;
+  if (!chapters.length) return false;
   const { results } = await env.DB.prepare("SELECT chapter FROM checks WHERE member_id = ? AND day = ?").bind(me.id, day).all();
   const set = new Set(results.map((r) => r.chapter));
-  if (!chapters.every((c) => set.has(chapterKey(c)))) return;
+  if (!chapters.every((c) => set.has(chapterKey(c)))) return false;
   await env.DB.prepare(
     "INSERT OR IGNORE INTO messages (member_id, kind, day, body, created_at) VALUES (?, 'done', ?, ?, ?)",
   ).bind(me.id, day, "오늘 말씀을 다 읽었어요 🎉", nowIso()).run();
+  return true;
 }
 
 async function notifyChat(env, me, text) {
@@ -576,7 +629,8 @@ async function handleChat(request, env, ctx, me, path, method, url) {
     } else {
       rows = (await env.DB.prepare(`${base} ORDER BY m.id DESC LIMIT 100`).all()).results.reverse();
     }
-    return json({ messages: await attachReactions(env, rows), updates: await attachReactions(env, updates) });
+    const { results: reads } = await env.DB.prepare("SELECT id, last_read_msg AS last_read FROM members").all();
+    return json({ messages: await attachReactions(env, rows), updates: await attachReactions(env, updates), reads });
   }
 
   if (path === "/chat" && method === "POST") {
@@ -590,6 +644,7 @@ async function handleChat(request, env, ctx, me, path, method, url) {
     const row = await env.DB.prepare(`SELECT ${MSG_COLS} FROM messages m LEFT JOIN members mem ON mem.id = m.member_id
       WHERE m.member_id = ? AND m.created_at = ? ORDER BY m.id DESC LIMIT 1`).bind(me.id, created).first();
     await env.DB.prepare("UPDATE members SET last_read_msg = MAX(last_read_msg, ?) WHERE id = ?").bind(row.id, me.id).run();
+    signalChat(env, ctx);
     const job = notifyChat(env, me, text);
     if (ctx?.waitUntil) ctx.waitUntil(job); else await job;
     return json({ message: (await attachReactions(env, [row]))[0] });
@@ -598,7 +653,10 @@ async function handleChat(request, env, ctx, me, path, method, url) {
   if (path === "/chat/read" && method === "POST") {
     const { id } = await readBody(request);
     if (!Number.isInteger(id)) throw new HttpError(400, "잘못된 요청이에요.");
-    await env.DB.prepare("UPDATE members SET last_read_msg = MAX(last_read_msg, ?) WHERE id = ?").bind(id, me.id).run();
+    if (id > (me.last_read_msg || 0)) {
+      await env.DB.prepare("UPDATE members SET last_read_msg = MAX(last_read_msg, ?) WHERE id = ?").bind(id, me.id).run();
+      signalChat(env, ctx);
+    }
     return json({ ok: true });
   }
 
@@ -613,6 +671,7 @@ async function handleChat(request, env, ctx, me, path, method, url) {
     await (had
       ? env.DB.prepare("DELETE FROM reactions WHERE message_id = ? AND member_id = ? AND emoji = ?").bind(id, me.id, emoji)
       : env.DB.prepare("INSERT INTO reactions (message_id, member_id, emoji) VALUES (?, ?, ?)").bind(id, me.id, emoji)).run();
+    signalChat(env, ctx);
     return json({ ok: true, on: !had });
   }
 
@@ -626,6 +685,7 @@ async function handleChat(request, env, ctx, me, path, method, url) {
       env.DB.prepare("UPDATE messages SET body = '', deleted_at = ? WHERE id = ?").bind(nowIso(), id),
       env.DB.prepare("DELETE FROM reactions WHERE message_id = ?").bind(id),
     ]);
+    signalChat(env, ctx);
     return json({ ok: true });
   }
 
