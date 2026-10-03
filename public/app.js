@@ -3,7 +3,7 @@ import {
   chapterKey, dateOfDaySched, dayOnDate, EVERY_DAY, formatChapters, isDayDone, itemLabel, kstToday, maskCount,
   MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
-import { LATEST_NOTICE, NOTICES } from "./shared/notices.js";
+import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
 import {
   dayOfYear, daysNeeded, isFixed, PER_DAY_CHOICES, readingsOn, ROADMAP_ORDER, ROADMAPS, sectionLabel, videoOn,
@@ -24,7 +24,7 @@ const S = {
   vapid: null, loaded: false, tab: store.get("tab") || "today",
   mode: store.get("mode") || "group", joinView: "new",
   roadmap: "flow397", perDay: 3,
-  readDays: EVERY_DAY, sched: null, noticeSeen: LATEST_NOTICE, // 개인 모드: 읽는 요일·일정, 확인한 업데이트 소식 번호
+  readDays: EVERY_DAY, sched: null, noticeSeen: 999, // 읽는 요일·일정(개인: 나만, 모임: 공통), 확인한 업데이트 소식 번호
   wdDraft: EVERY_DAY, // 설정의 '요일 바꾸기' 창에서 고르는 중인 요일
   admin: null, // 관리자 탭 통계 (개인 모드, 관리자 코드를 넣은 기기만)
   chatUnread: 0, chatDraft: "", chat: { msgs: [], loaded: false, more: false, reads: [] },
@@ -87,7 +87,7 @@ const schedNow = () => S.sched || S.startDate;
 const todayDay = () => (S.startDate ? dayOnDate(schedNow(), S.today).day : null);
 const restToday = () => (S.startDate ? dayOnDate(schedNow(), S.today).rest : false); // 오늘이 쉬는 요일인지
 const dateOf = (day) => dateOfDaySched(schedNow(), day);
-const unseenNotices = () => (personal() ? NOTICES.filter((n) => n.id > S.noticeSeen).length : 0);
+const unseenNotices = () => noticesFor(personal()).filter((n) => n.id > S.noticeSeen).length;
 const dayPlan = (day) => S.plan[day - 1];
 const checkedSet = (day) => S.checks.get(day) || new Set();
 const dayDone = (day) => isDayDone(dayPlan(day).chapters, checkedSet(day));
@@ -112,7 +112,7 @@ async function loadState() {
   S.perDay = data.perDay || 3;
   S.readDays = data.readDays ?? EVERY_DAY;
   S.sched = data.sched || null;
-  S.noticeSeen = data.noticeSeen ?? LATEST_NOTICE;
+  S.noticeSeen = data.noticeSeen ?? latestNotice(personal());
   S.startDate = data.startDate;
   S.today = data.today;
   S.vapid = data.vapidPublicKey;
@@ -965,17 +965,21 @@ function renderSettings() {
       <p class="hint">점심·저녁 알림은 그날 분량을 다 체크하지 않았을 때만 와요.</p>
     </div>
 
-    ${personal() ? `<h2 class="section">읽기 계획</h2>
+    <h2 class="section">읽기 계획</h2>
     <div class="card">
-      <p style="margin:0 0 4px"><b>${esc(ROADMAPS[S.roadmap]?.name || "")}</b></p>
-      <p class="muted" style="margin:0 0 12px">${fixedPlan() ? `${ROADMAPS[S.roadmap].summary} · ${niceDate(S.startDate, true)} 시작` : `하루 ${S.perDay}장 · ${total()}일 · ${niceDate(S.startDate, true)} 시작`}</p>
-      ${fixedPlan() ? "" : `<div class="setting-row"><div class="main">읽는 요일 <b>${weekdaysText(S.readDays)}</b>
-          <small>완독 예정 ${niceDate(dateOf(total()), true)}</small></div>
-        <button class="btn secondary" data-action="read-days">요일 바꾸기</button></div>`}
-      ${fixedPlan() ? "" : `<form class="plan-start" id="start-form">${startFieldsHtml()}</form>`}
-      <button class="btn secondary block mt" data-action="plan-change">계획 바꾸기</button>
-    </div>` : `<h2 class="section">모임 시작일 (DAY 1)</h2>
-    <form class="card" id="start-form">${startFieldsHtml()}</form>`}
+      <p style="margin:0 0 4px"><b>${personal() ? esc(ROADMAPS[S.roadmap]?.name || "") : "397일 성경읽기 로드맵"}</b></p>
+      <p class="muted" style="margin:0 0 4px">${fixedPlan() ? `${ROADMAPS[S.roadmap].summary} · ${niceDate(S.startDate, true)} 시작`
+        : `${personal() ? `하루 ${S.perDay}장 · ` : "모두 함께 · "}${total()}일`}</p>
+      ${fixedPlan() ? "" : `
+      <div class="setting-row"><div class="main">${personal() ? "시작일" : "모임 시작일"} <b>${S.startDate ? niceDate(S.startDate, true) : "아직 안 정했어요"}</b>
+          ${S.startDate ? `<small>마지막 날 ${niceDate(dateOf(total()), true)}</small>` : ""}</div>
+        <button class="btn secondary" data-action="start-date">${S.startDate ? "시작일 바꾸기" : "시작일 정하기"}</button></div>
+      ${S.startDate ? `<div class="setting-row"><div class="main">읽는 요일 <b>${weekdaysText(S.readDays)}</b>
+          <small>${forAll("모두에게 같이 적용돼요")}</small></div>
+        <button class="btn secondary" data-action="read-days">요일 바꾸기</button></div>` : ""}`}
+      ${personal() ? `<button class="btn secondary block mt" data-action="plan-change">계획 바꾸기</button>`
+        : `<button class="btn secondary block mt" data-action="tab" data-tab="plan">전체 일정 보기 · 범위 바꾸기</button>`}
+    </div>
 
     <h2 class="section">도움말</h2>
     <div class="card">
@@ -993,13 +997,13 @@ function renderSettings() {
     <div class="card">
       <p style="margin:0 0 12px">폰을 바꿨을 때 기록을 이어 쓰는 코드예요.</p>
       <button class="btn secondary block" data-action="show-code">내 복구 코드 보기</button>
-    </div>
+    </div>` : ""}
 
     <div class="card mt">
       <button class="row notices-row" data-action="notices"><span class="main"><span class="title">업데이트 내용</span>
         <span class="sub">새로 바뀐 점을 날짜별로 볼 수 있어요</span></span>
         ${unseenNotices() ? `<span class="chip warn">새 소식 ${unseenNotices()}</span>` : `<span class="mark">›</span>`}</button>
-    </div>` : ""}
+    </div>
 
     <button class="btn ghost block mt" data-action="sign-out">이 기기에서 나가기</button>
     ${personal() ? `<p class="center"><button class="admin-link" data-action="${hasAdmin() ? "admin-logout" : "admin-open"}">${hasAdmin() ? "관리자 코드 지우기" : "관리자"}</button></p>` : ""}
@@ -1007,11 +1011,16 @@ function renderSettings() {
 }
 
 // 시작일(DAY 1) 칸 — 개인 모드는 '읽기 계획' 박스 안, 모임 모드는 따로
-function startFieldsHtml() {
-  return `<label class="field"><span>${personal() ? "시작일 (DAY 1) · 바꾸면 날짜별 읽을 곳이 함께 바뀌어요" : "모든 사람에게 같이 적용돼요"}</span>
-      <input class="input" type="date" name="start" value="${esc(S.startDate || "")}" required></label>
-    <button class="btn" type="submit">시작일 저장</button>
-    ${S.startDate ? `<p class="hint">현재: ${niceDate(S.startDate, true)} · 마지막 날 ${niceDate(dateOf(total()), true)}</p>` : ""}`;
+function openStartDate() {
+  openSheet(`
+    <h3>${personal() ? "시작일 (DAY 1)" : "모임 시작일 (DAY 1)"}</h3>
+    <form id="start-form">
+      <label class="field"><span>${personal() ? "바꾸면 날짜별 읽을 곳이 함께 바뀌어요" : "모든 사람에게 같이 적용돼요"}</span>
+        <input class="input" type="date" name="start" value="${esc(S.startDate || kstToday())}" required></label>
+      ${S.startDate ? `<p class="hint">현재: ${niceDate(S.startDate, true)} · 마지막 날 ${niceDate(dateOf(total()), true)}</p>` : ""}
+      <div class="btn-row"><button class="btn secondary" type="button" data-action="close-sheet">취소</button>
+        <button class="btn grow" type="submit">저장${forAll(" (모두에게 적용)")}</button></div>
+    </form>`);
 }
 
 // 내 정보 수정 창 (이름)
@@ -1026,9 +1035,10 @@ function openEditMe() {
 }
 
 // 업데이트 소식 (개인용 사용자·관리자 앱 공용). 열면 모두 확인한 것으로
-function noticesHtml(seen) {
+// list: 개인용(NOTICES) 또는 모임용(GROUP_NOTICES) 소식
+function noticesHtml(seen, list = noticesFor(personal())) {
   return `<h3>업데이트 내용</h3>
-    ${NOTICES.map((n) => `<div class="notice-item">
+    ${list.map((n) => `<div class="notice-item">
       <p class="notice-date">${esc(n.date)}${n.id > seen ? ` <span class="chip warn">NEW</span>` : ""}</p>
       <p class="notice-title">${esc(n.title)}</p>
       <ul class="notice-list">${n.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
@@ -1036,10 +1046,11 @@ function noticesHtml(seen) {
 }
 
 function openNotices() {
+  const latest = latestNotice(personal());
   openSheet(noticesHtml(S.noticeSeen));
-  if (S.noticeSeen >= LATEST_NOTICE) return;
-  S.noticeSeen = LATEST_NOTICE;
-  api("/notices/seen", { method: "POST", body: { id: LATEST_NOTICE } }).catch(() => {});
+  if (S.noticeSeen >= latest) return;
+  S.noticeSeen = latest;
+  api("/notices/seen", { method: "POST", body: { id: latest } }).catch(() => {});
   const scroll = window.scrollY;
   render(); // 설정 탭 빨간 점 없애기 (창은 그대로)
   window.scrollTo(0, scroll);
@@ -1060,23 +1071,24 @@ function openReadDays(keepDraft = false) {
   const m = S.wdDraft;
   openSheet(`
     <h3>읽는 요일 바꾸기</h3>
-    <p class="muted" style="margin:0 0 12px">생활에 맞게 ${MIN_READ_DAYS}일 이상 골라 주세요. 쉬는 요일에는 알림이 오지 않고, 밀린 날로 세지 않아요.</p>
+    <p class="muted" style="margin:0 0 12px">${personal() ? "생활에 맞게 " : "모임이 함께 읽을 요일을 "}${MIN_READ_DAYS}일 이상 골라 주세요. 쉬는 요일에는 알림이 오지 않고, 밀린 날로 세지 않아요.${forAll(" <b>모든 사람에게 같이 적용돼요.</b>")}</p>
     ${weekdayChips(m, "wd-toggle")}
     ${validMask(m) ? `<div class="pick-summary"><p><b>${weekdaysText(m)}</b> 읽기</p>
-      <p class="muted">완독 예정: ${niceDate(dateOf(total()), true)} → <b>${niceDate(readDaysPreviewEnd(m), true)}</b></p></div>` : ""}
+      <p class="muted">마지막 날: ${niceDate(dateOf(total()), true)} → <b>${niceDate(readDaysPreviewEnd(m), true)}</b></p></div>` : ""}
     <p class="hint">오늘부터 적용돼요. 지난 날의 체크 기록은 그대로예요.</p>
     <div class="btn-row"><button class="btn secondary" data-action="close-sheet">취소</button>
       <button class="btn grow" data-action="read-days-save" ${validMask(m) && m !== S.readDays ? "" : "disabled"}>저장</button></div>`);
 }
 
 async function saveReadDays(btn) {
+  if (!personal() && !confirm(`읽는 요일을 ${weekdaysText(S.wdDraft)}(으)로 바꿀까요? 모든 사람에게 같이 적용돼요.`)) return;
   btn.disabled = true;
   try {
     await api("/read-days", { method: "PUT", body: { mask: S.wdDraft } });
     await loadState();
     closeSheet();
     render();
-    toast(`이제 ${S.readDays === EVERY_DAY ? "매일" : `${weekdaysText(S.readDays)}에`} 읽어요. 완독 예정 ${niceDate(dateOf(total()))}`);
+    toast(`이제 ${S.readDays === EVERY_DAY ? "매일" : `${weekdaysText(S.readDays)}에`} 읽어요. 마지막 날 ${niceDate(dateOf(total()))}`);
   } catch (e) { toast(e.message); btn.disabled = false; }
 }
 
@@ -1358,12 +1370,13 @@ document.addEventListener("click", async (ev) => {
   else if (a === "plan-change") openPlanChange();
   else if (a === "pick-wd") { S.pick.readDays ^= 1 << Number(el.dataset.i); rerenderPicker(); }
   else if (a === "read-days") openReadDays();
+  else if (a === "start-date") openStartDate();
   else if (a === "wd-toggle") { S.wdDraft ^= 1 << Number(el.dataset.i); openReadDays(true); }
   else if (a === "read-days-save") saveReadDays(el);
   else if (a === "edit-me") openEditMe();
   else if (a === "notices") openNotices();
   else if (a === "admin-notices") {
-    openSheet(noticesHtml(Number(store.get("adminNoticeSeen") || 0)));
+    openSheet(noticesHtml(Number(store.get("adminNoticeSeen") || 0), NOTICES));
     store.set("adminNoticeSeen", String(LATEST_NOTICE));
     $("#admin-notice-new")?.remove();
   }
@@ -1454,6 +1467,7 @@ document.addEventListener("submit", async (ev) => {
     try {
       await api("/settings", { method: "PUT", body: { start_date: v } });
       await loadState();
+      closeSheet();
       render();
       toast("시작일을 저장했어요.");
     } catch (e) { toast(e.message); }

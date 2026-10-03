@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dateOfDay, dateOfDaySched, dayIndex, dayOnDate, kstToday, weekdaysText } from "../public/shared/bible.js";
-import { LATEST_NOTICE } from "../public/shared/notices.js";
+import { LATEST_NOTICE, latestNotice } from "../public/shared/notices.js";
 import { buildMessage, progress } from "../worker/logic.js";
 import worker from "../worker/index.js";
 import { createLocalDB, personalMigrations } from "../scripts/d1-local.mjs";
@@ -137,16 +137,49 @@ test("기존 개인 DB 에 0003 적용: 매일 읽기 그대로, 소식은 안 �
   assert.equal((await call("/api/state", { token: "tok" })).data.noticeSeen, LATEST_NOTICE);
 });
 
-test("모임 모드에는 요일·소식 기능이 없다", async () => {
-  const env = { DB: createLocalDB({ mode: "group" }), ASSETS: { fetch: () => new Response("") }, INVITE_CODE: "test" };
-  const go = async (path, body, token) => worker.fetch(new Request("https://g.test/api" + path, {
-    method: body ? (path === "/read-days" ? "PUT" : "POST") : "GET",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  }), env, { waitUntil() {} });
-  const t = (await (await go("/join", { name: "가", invite: "test" })).json()).token;
-  assert.equal((await go("/read-days", { mask: 127 }, t)).status, 404);
-  assert.equal((await go("/notices/seen", { id: 1 }, t)).status, 404);
-  const s = await (await go("/state", null, t)).json();
-  assert.equal(s.sched, undefined);
+test("모임 모드: 읽는 요일은 모두 공통, 소식 확인은 사람마다", async () => {
+  const DB = createLocalDB({ mode: "group" });
+  const env = { DB, ASSETS: { fetch: () => new Response("") }, INVITE_CODE: "test" };
+  const go = async (path, { method = "GET", body, token } = {}) => {
+    const res = await worker.fetch(new Request("https://g.test/api" + path, {
+      method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    }), env, { waitUntil() {} });
+    return { status: res.status, data: await res.json().catch(() => null) };
+  };
+  const join = async (name) => (await go("/join", { method: "POST", body: { name, invite: "test" } })).data.token;
+  const a = await join("가");
+  const b = await join("나");
+  // 시작일 전에는 요일을 바꿀 수 없음
+  assert.equal((await go("/read-days", { method: "PUT", token: a, body: { mask: NO_SUN } })).status, 409);
+  const today = kstToday();
+  const start = addDays(today, -10);
+  await go("/settings", { method: "PUT", token: a, body: { start_date: start } });
+  assert.equal((await go("/read-days", { method: "PUT", token: a, body: { mask: 7 } })).status, 400);
+  const todayBit = 1 << new Date(today + "T00:00:00Z").getUTCDay();
+  assert.equal((await go("/read-days", { method: "PUT", token: a, body: { mask: 127 - todayBit } })).status, 200);
+  // 나(b)에게도 같이 적용
+  const sb = (await go("/state", { token: b })).data;
+  assert.equal(sb.readDays, 127 - todayBit);
+  assert.deepEqual(sb.sched, [{ date: start, day: 1, mask: 127 }, { date: today, day: 11, mask: 127 - todayBit }]);
+  const { history } = (await go("/history", { token: b })).data;
+  assert.match(history[0].summary, /읽는 요일: 매일 →/);
+  // 함께 탭: 오늘은 쉬는 날 → DAY 1~10 만 밀린 날
+  const me = (await go("/members", { token: a })).data.members.find((m) => m.name === "나");
+  assert.equal(me.missedDays, 10);
+  // 쉬는 날에 다음 분량을 다 읽어도 '오늘 완료' 소식은 없음
+  for (const c of [28, 29, 30]) await go("/check", { method: "POST", token: a, body: { day: 11, chapter: `누가복음 ${c}`, checked: true } });
+  assert.equal((await go("/chat", { token: a })).data.messages.length, 0);
+  // 시작일을 바꾸면 요일 구간 기록은 비우고 지금 요일로
+  await go("/settings", { method: "PUT", token: a, body: { start_date: addDays(today, 2) } });
+  assert.deepEqual((await go("/state", { token: b })).data.sched, [{ date: addDays(today, 2), day: 1, mask: 127 - todayBit }]);
+  // 소식: 새로 들어온 사람은 최신 번호, 다시 입장해도 그대로, 확인은 커지기만
+  const latest = latestNotice(false);
+  assert.equal((await go("/state", { token: a })).data.noticeSeen, latest);
+  await DB.prepare("UPDATE members SET notice_seen = 0 WHERE name = '가'").run();
+  await join("가");
+  assert.equal((await go("/state", { token: a })).data.noticeSeen, 0);
+  assert.equal((await go("/notices/seen", { method: "POST", token: a, body: { id: latest + 1 } })).status, 400);
+  await go("/notices/seen", { method: "POST", token: a, body: { id: latest } });
+  assert.equal((await go("/state", { token: a })).data.noticeSeen, latest);
 });

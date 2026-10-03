@@ -7,10 +7,10 @@
 // - 모임 모드(기본): 초대 코드로 입장, 시작일·읽기표를 모두가 함께 씀 (schema.sql)
 // - 개인 모드(MODE=personal): 코드 없이 시작, 사람마다 시작일·읽기표가 따로 (schema-personal.sql)
 import {
-  chapterKey, dateOfDay, dayIndex, dayOnDate, EVERY_DAY, formatChapters, kstTime, kstToday, MIN_READ_DAYS,
+  chapterKey, dateOfDaySched, dayIndex, dayOnDate, EVERY_DAY, formatChapters, kstTime, kstToday, MIN_READ_DAYS,
   parseChapters, validChapters, validMask, weekdaysText,
 } from "../public/shared/bible.js";
-import { LATEST_NOTICE } from "../public/shared/notices.js";
+import { latestNotice } from "../public/shared/notices.js";
 import {
   buildPlan, fixedDays, isFixed, isRoadmap, ROADMAPS, yearLength,
 } from "../public/shared/roadmaps.js";
@@ -178,11 +178,26 @@ async function ensureMcheyneHorizon(env, me, today = kstToday()) {
   await insertPlanStmt(env, me.id, more, last + 1).run();
 }
 
-// 개인 모드: 읽는 요일 일정 [{date, day, mask}] (요일을 바꾼 적 없으면 시작일부터 read_days)
-function memberSched(me) {
-  if (me.sched) { try { return JSON.parse(me.sched); } catch { /* 아래 기본값 */ } }
-  return [{ date: me.start_date, day: 1, mask: me.read_days ?? EVERY_DAY }];
+// 읽는 요일 일정 [{date, day, mask}] (요일을 바꾼 적 없으면 시작일부터 readDays)
+function schedFrom(startDate, readDays, schedJson) {
+  if (!startDate) return null;
+  if (schedJson) { try { return JSON.parse(schedJson); } catch { /* 아래 기본값 */ } }
+  return [{ date: startDate, day: 1, mask: readDays ?? EVERY_DAY }];
 }
+const memberSched = (me) => schedFrom(me.start_date, me.read_days, me.sched);
+
+// 개인 = 사람마다(members 칸), 모임 = 모두 공통(settings 의 start_date·read_days·sched)
+async function getSchedule(env, me) {
+  if (isPersonal(env)) return { startDate: me.start_date, readDays: me.read_days ?? EVERY_DAY, sched: memberSched(me) };
+  const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('start_date', 'read_days', 'sched')").all();
+  const v = Object.fromEntries(results.map((r) => [r.key, r.value]));
+  const readDays = v.read_days ? Number(v.read_days) : EVERY_DAY;
+  return { startDate: v.start_date || null, readDays, sched: schedFrom(v.start_date, readDays, v.sched) };
+}
+
+const setSetting = (env, key, value) => (value === null
+  ? env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(key)
+  : env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, String(value)));
 
 function checkMask(value) {
   const mask = Number(value);
@@ -210,12 +225,10 @@ async function getStartDate(env, me) {
   return row ? row.value : null;
 }
 
-function setStartDateStmt(env, me, value) {
-  if (isPersonal(env)) return env.DB.prepare("UPDATE members SET start_date = ?, sched = NULL WHERE id = ?").bind(value, me.id); // 새 시작일부터 지금 요일로
-  return value === null
-    ? env.DB.prepare("DELETE FROM settings WHERE key = 'start_date'")
-    : env.DB.prepare("INSERT INTO settings (key, value) VALUES ('start_date', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-      .bind(value);
+// 시작일을 바꾸면 요일 구간 기록은 비우고 새 시작일부터 지금 요일로
+function setStartDateStmts(env, me, value) {
+  if (isPersonal(env)) return [env.DB.prepare("UPDATE members SET start_date = ?, sched = NULL WHERE id = ?").bind(value, me.id)];
+  return [setSetting(env, "start_date", value), setSetting(env, "sched", null)];
 }
 
 function historyStmt(env, me, kind, day, before, after, note = null) {
@@ -415,8 +428,8 @@ async function handleApi(request, env, url, ctx) {
 
   if (path === "/state" && method === "GET") {
     await ensureMcheyneHorizon(env, me);
-    const [plan, startDate, checks] = await Promise.all([
-      loadPlan(env, me), getStartDate(env, me), loadChecks(env, me.id),
+    const [plan, { startDate, readDays, sched }, checks] = await Promise.all([
+      loadPlan(env, me), getSchedule(env, me), loadChecks(env, me.id),
     ]);
     const mine = {};
     for (const [day, set] of checks.get(me.id) || []) mine[day] = [...set];
@@ -424,7 +437,7 @@ async function handleApi(request, env, url, ctx) {
       mode: isPersonal(env) ? "personal" : "group",
       roadmap: isPersonal(env) ? me.roadmap : "flow397",
       perDay: isPersonal(env) ? me.per_day : 3,
-      ...(isPersonal(env) ? { readDays: me.read_days ?? EVERY_DAY, sched: memberSched(me), noticeSeen: me.notice_seen ?? 0 } : {}),
+      readDays, sched, noticeSeen: me.notice_seen ?? 0,
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
       ...(isPersonal(env) ? {} : { chatUnread: await chatUnread(env, me) }),
@@ -461,15 +474,15 @@ async function handleApi(request, env, url, ctx) {
 
   // 함께 읽기: 모든 사람의 진행 현황 (모임 모드 전용)
   if (path === "/members" && method === "GET" && !isPersonal(env)) {
-    const [plan, startDate, checks, { results: members }] = await Promise.all([
-      loadPlan(env, me), getStartDate(env, me), loadChecks(env),
+    const [plan, { sched }, checks, { results: members }] = await Promise.all([
+      loadPlan(env, me), getSchedule(env, me), loadChecks(env),
       env.DB.prepare("SELECT id, name, last_seen_at FROM members ORDER BY name").all(),
     ]);
     const today = kstToday();
     return json({
       members: members.map((m) => {
-        const p = progress(plan, startDate, today, checks.get(m.id) || new Map());
-        const thisMonth = missedByMonth(p.missedDetail, startDate).find((x) => x.month === today.slice(0, 7));
+        const p = progress(plan, sched, today, checks.get(m.id) || new Map());
+        const thisMonth = sched ? missedByMonth(p.missedDetail, sched).find((x) => x.month === today.slice(0, 7)) : null;
         return {
           id: m.id, name: m.name, lastSeenAt: m.last_seen_at,
           doneDays: p.doneDays, total: p.total, missedDays: p.missed.length,
@@ -503,28 +516,30 @@ async function handleApi(request, env, url, ctx) {
     return json({ ok: true });
   }
 
-  // 개인 모드: 읽는 요일 바꾸기 (오늘부터 적용, 지난 날의 DAY·날짜·체크는 그대로)
-  if (path === "/read-days" && method === "PUT" && isPersonal(env)) {
+  // 읽는 요일 바꾸기 — 개인: 나만, 모임: 모두에게 (오늘부터 적용, 지난 날의 DAY·날짜·체크는 그대로)
+  if (path === "/read-days" && method === "PUT") {
     const mask = checkMask((await readBody(request)).mask);
-    const before = me.read_days ?? EVERY_DAY;
+    const { startDate, readDays: before, sched: cur } = await getSchedule(env, me);
+    if (!startDate) throw new HttpError(409, "먼저 시작일을 정해 주세요.");
     if (mask === before) return json({ ok: true, unchanged: true });
     const today = kstToday();
     let sched = null; // 시작 전이면 시작일부터 새 요일로
-    if (today > me.start_date) {
-      const cur = memberSched(me);
+    if (today > startDate) {
       sched = JSON.stringify([...cur.filter((x) => x.date < today), { date: today, day: dayOnDate(cur, today).day, mask }]);
     }
     await env.DB.batch([
-      env.DB.prepare("UPDATE members SET read_days = ?, sched = ? WHERE id = ?").bind(mask, sched, me.id),
+      ...(isPersonal(env)
+        ? [env.DB.prepare("UPDATE members SET read_days = ?, sched = ? WHERE id = ?").bind(mask, sched, me.id)]
+        : [setSetting(env, "read_days", mask), setSetting(env, "sched", sched)]),
       historyStmt(env, me, "read_days", null, String(before), String(mask)),
     ]);
     return json({ ok: true });
   }
 
-  // 개인 모드: 업데이트 소식 확인 (번호는 커지기만 한다)
-  if (path === "/notices/seen" && method === "POST" && isPersonal(env)) {
+  // 업데이트 소식 확인 (번호는 커지기만 한다). 개인용·모임용 소식 목록은 따로
+  if (path === "/notices/seen" && method === "POST") {
     const id = Number((await readBody(request)).id);
-    if (!Number.isInteger(id) || id < 0 || id > LATEST_NOTICE) throw new HttpError(400, "잘못된 요청이에요.");
+    if (!Number.isInteger(id) || id < 0 || id > latestNotice(isPersonal(env))) throw new HttpError(400, "잘못된 요청이에요.");
     await env.DB.prepare("UPDATE members SET notice_seen = MAX(notice_seen, ?) WHERE id = ?").bind(id, me.id).run();
     return json({ ok: true });
   }
@@ -535,13 +550,13 @@ async function handleApi(request, env, url, ctx) {
     const id = Number(memberMatch[1]);
     const m = await env.DB.prepare("SELECT id, name FROM members WHERE id = ?").bind(id).first();
     if (!m) throw new HttpError(404, "그런 사람이 없어요.");
-    const [plan, startDate, checks] = await Promise.all([loadPlan(env, me), getStartDate(env, me), loadChecks(env, id)]);
-    const p = progress(plan, startDate, kstToday(), checks.get(id) || new Map());
+    const [plan, { sched }, checks] = await Promise.all([loadPlan(env, me), getSchedule(env, me), loadChecks(env, id)]);
+    const p = progress(plan, sched, kstToday(), checks.get(id) || new Map());
     return json({
       id: m.id, name: m.name, doneDays: p.doneDays, total: p.total, streak: p.streak,
       missedDays: p.missed.length, missedChapters: p.missedChapters,
-      months: startDate ? missedByMonth(p.missedDetail, startDate) : [],
-      missed: p.missedDetail.map((x) => ({ ...x, date: dateOfDay(startDate, x.day) })).reverse(),
+      months: sched ? missedByMonth(p.missedDetail, sched) : [],
+      missed: p.missedDetail.map((x) => ({ ...x, date: dateOfDaySched(sched, x.day) })).reverse(),
     });
   }
 
@@ -609,7 +624,7 @@ async function handleApi(request, env, url, ctx) {
       if (isPersonal(env) && !h.before_value) throw new HttpError(409, "처음 정한 시작일은 되돌릴 수 없어요.");
       const current = await getStartDate(env, me);
       await env.DB.batch([
-        setStartDateStmt(env, me, h.before_value),
+        ...setStartDateStmts(env, me, h.before_value),
         historyStmt(env, me, "start_date", null, current, h.before_value, note),
       ]);
     }
@@ -623,7 +638,7 @@ async function handleApi(request, env, url, ctx) {
     const current = await getStartDate(env, me);
     if (current === start_date) return json({ ok: true, unchanged: true });
     await env.DB.batch([
-      setStartDateStmt(env, me, start_date),
+      ...setStartDateStmts(env, me, start_date),
       historyStmt(env, me, "start_date", null, current, start_date),
     ]);
     return json({ ok: true });
@@ -714,8 +729,9 @@ async function chatUnread(env, me) {
 
 // 오늘 분량을 다 체크한 순간 '읽기 완료' 소식 (한 사람당 하루 한 번, 지난 날 완료는 제외, 알림 없음)
 async function postDoneIfToday(env, me, day) {
-  const startDate = await getStartDate(env, me);
-  if (!startDate || dayIndex(startDate, kstToday()) !== day) return false;
+  const { sched } = await getSchedule(env, me);
+  const on = sched && dayOnDate(sched, kstToday());
+  if (!on || on.rest || on.day !== day) return false; // 쉬는 요일에 미리 읽은 것은 '오늘 완료'가 아님
   const row = await getDayRow(env, me, day);
   if (!row) return false;
   const chapters = JSON.parse(row.chapters);
@@ -829,8 +845,8 @@ async function joinGroup(request, env) {
   const n = cleanName(name);
   let me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
   if (!me) {
-    await env.DB.prepare("INSERT INTO members (name, token, created_at) VALUES (?, ?, ?)")
-      .bind(n, newToken(), nowIso()).run();
+    await env.DB.prepare("INSERT INTO members (name, token, created_at, notice_seen) VALUES (?, ?, ?, ?)")
+      .bind(n, newToken(), nowIso(), latestNotice(false)).run(); // 새 사람은 지난 소식 표시 없이
     me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
   }
   return json({ token: me.token, member: publicMember(me) });
@@ -850,7 +866,7 @@ async function joinPersonal(request, env) {
       await env.DB.prepare(
         `INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, read_days, notice_seen, created_at, last_seen_at, app_first_at, app_last_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, readDays, LATEST_NOTICE, now, now, appNow, appNow).run(); // 새 사람은 지난 소식 표시 없이
+      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, readDays, latestNotice(true), now, now, appNow, appNow).run(); // 새 사람은 지난 소식 표시 없이
       break;
     } catch (e) {
       if (attempt >= 3) throw e; // 복구 코드가 우연히 겹치면 다시 만든다
@@ -932,7 +948,7 @@ async function runNotifications(env, now) {
     env.DB.prepare("SELECT member_id, slot FROM sent_log WHERE date = ?").bind(today).all(),
   ]);
   // 모임 모드는 읽기표·시작일이 한 벌이므로 한 번만 읽는다
-  const shared = isPersonal(env) ? null : { plan: await loadPlan(env, null), startDate: await getStartDate(env, null) };
+  const shared = isPersonal(env) ? null : { plan: await loadPlan(env, null), sched: (await getSchedule(env, null)).sched };
   const sentBy = new Map();
   for (const r of sentRows) {
     if (!sentBy.has(r.member_id)) sentBy.set(r.member_id, new Set());
@@ -943,7 +959,7 @@ async function runNotifications(env, now) {
     if (!slots.length) continue;
     if (!shared) await ensureMcheyneHorizon(env, m, today);
     const plan = shared ? shared.plan : await loadPlan(env, m);
-    const sched = shared ? shared.startDate : memberSched(m);
+    const sched = shared ? shared.sched : memberSched(m);
     if (!sched) continue;
     const prog = progress(plan, sched, today, checks.get(m.id) || new Map());
     // 여러 칸이 한꺼번에 밀렸으면 가장 최근 칸 하나만 보낸다

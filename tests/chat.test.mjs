@@ -102,6 +102,8 @@ test("기존 모임 DB: 변경 파일을 적용해도 멤버·체크 그대로",
   assert.deepEqual(s.checks, { 1: ["누가복음 1"] });
   assert.equal(s.chatUnread, 0);
   assert.equal(s.me.chat_push, true);
+  assert.equal(s.noticeSeen, 0); // 기존 모임원은 업데이트 소식을 새 소식으로 본다
+  assert.equal(s.readDays, 127);
 });
 
 test("대화: 카톡식 안 읽음 숫자용 읽은 위치(reads)", async () => {
