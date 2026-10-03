@@ -4,6 +4,12 @@
 // 확인하지 않은 소식이 있으면 설정 탭에 빨간 점이 뜬다 (members.notice_seen 보다 큰 id).
 export const NOTICES = [
   {
+    id: 6,
+    date: "2026-10-04",
+    title: "미리 읽은 곳 표시",
+    items: ["오늘 분량보다 앞서 읽었으면 오늘 탭에 'DAY 8 (10월 11일)의 누가복음 23장까지 미리 읽었어요'처럼 보여 줘요. 누르면 그날로 가요"],
+  },
+  {
     id: 5,
     date: "2026-10-04",
     title: "시작일 바꾸기 버튼",
@@ -55,6 +61,12 @@ export const NOTICES = [
 export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
+  {
+    id: 3,
+    date: "2026-10-04",
+    title: "미리 읽은 곳 표시",
+    items: ["오늘 분량보다 앞서 읽었으면 오늘 탭에 'DAY 8 (10월 11일)의 누가복음 23장까지 미리 읽었어요'처럼 보여 줘요. 누르면 그날로 가요"],
+  },
   {
     id: 2,
     date: "2026-10-04",

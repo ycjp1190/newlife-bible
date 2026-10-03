@@ -543,8 +543,32 @@ function renderToday() {
     <header class="top"><h1>${appName()}</h1><span class="date">${niceDate(S.today)}</span></header>
     ${pushNotice()}
     ${main}
+    ${aheadHtml()}
     ${missedHtml}
     ${navHtml()}`;
+}
+
+// 오늘 분량보다 앞서 미리 읽은 곳: "DAY 8 (10월 11일)의 누가복음 23장까지 미리 읽었어요"
+function aheadHtml() {
+  const t = todayDay();
+  if (t === null || t >= total()) return "";
+  const base = Math.max(t, 0); // 이 DAY 다음부터가 '미리'
+  let far = 0;
+  let count = 0;
+  for (let d = base + 1; d <= total(); d++) {
+    const n = dayPlan(d).chapters.filter((c) => checkedSet(d).has(chapterKey(c))).length;
+    if (n) { far = d; count += n; }
+  }
+  if (!far) return "";
+  const label = `${fixedPlan() ? `${monthDay(dateOf(far))} 본문` : `DAY ${far} (${monthDay(dateOf(far))})`}`;
+  let gap = false; // 미리 읽은 마지막 날 앞에 빠뜨린 날이 있는지
+  for (let d = base + 1; d < far; d++) if (!dayDone(d)) { gap = true; break; }
+  const allDone = !gap && dayDone(far);
+  const chapters = dayPlan(far).chapters.filter((c) => checkedSet(far).has(chapterKey(c)));
+  const text = allDone ? `<b>${label}</b>까지 미리 다 읽었어요`
+    : `<b>${label}</b>의 <b>${esc(itemLabel(chapters.at(-1)))}</b>까지 미리 읽었어요`;
+  return `<button class="ahead" data-action="open-day" data-day="${far}">🚀 ${text}
+    <small>오늘 이후 분량 ${count}장 체크${gap ? " · 중간에 건너뛴 날이 있어요 (일정 탭에서 확인)" : ""}</small></button>`;
 }
 
 function dayRowHtml(day) {
