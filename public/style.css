@@ -318,3 +318,16 @@ nav.tabs button { position: relative; }
 .admin-user { position: relative; }
 .admin-user .admin-del { position: absolute; right: -6px; bottom: 6px; color: var(--warn); font-size: 13px; }
 .admin-user.is-test .name { color: var(--muted); }
+
+/* 설정 탭 새 소식 점 (카톡 아이콘처럼) */
+.tab-dot { position: absolute; top: 6px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: var(--warn); }
+/* 업데이트 내용 */
+.notices-row { border-bottom: 0; padding: 4px; }
+.notice-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.notice-item:last-child { border-bottom: 0; }
+.notice-date { margin: 0; font-size: 13px; color: var(--muted); }
+.notice-title { margin: 4px 0 6px; font-weight: 700; }
+.notice-list { margin: 0; padding-left: 20px; font-size: 14.5px; line-height: 1.6; }
+/* 요일 고르기: 7개가 한 줄에 */
+.wd-chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.wd-chips .pchip { min-width: 0; padding: 9px 0; }

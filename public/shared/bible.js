@@ -154,6 +154,66 @@ export function dateOfDay(startDate, day) {
   return new Date(Date.parse(startDate + "T00:00:00Z") + (day - 1) * DAY_MS).toISOString().slice(0, 10);
 }
 
+// ── 읽는 요일 (개인 모드) ──
+// 요일 묶음(mask): 일=1, 월=2, 화=4, 수=8, 목=16, 금=32, 토=64. 127 = 매일
+// 일정(sched): [{ date, day, mask }] — "date 부터는 DAY day 부터, mask 요일에만 읽는다" 구간 목록 (날짜 오름차순)
+export const EVERY_DAY = 127;
+export const MIN_READ_DAYS = 6;
+const WEEK_KO = ["일", "월", "화", "수", "목", "금", "토"];
+const dayNo = (date) => Math.round(Date.parse(date + "T00:00:00Z") / DAY_MS);
+const dateOfNo = (n) => new Date(n * DAY_MS).toISOString().slice(0, 10);
+const weekdayOf = (n) => (n + 4) % 7; // 1970-01-01 은 목요일
+const readsOn = (mask, n) => (mask >> weekdayOf(n)) & 1;
+export const maskCount = (mask) => [0, 1, 2, 3, 4, 5, 6].filter((i) => (mask >> i) & 1).length;
+export const validMask = (mask) => Number.isInteger(mask) && mask >= 1 && mask <= EVERY_DAY && maskCount(mask) >= MIN_READ_DAYS;
+
+// "매일" / "월–토" / "일·화–토" 처럼 (월요일부터 읽는 순서)
+export function weekdaysText(mask) {
+  if (mask === EVERY_DAY) return "매일";
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const runs = [];
+  for (const i of order) {
+    if (!((mask >> i) & 1)) continue;
+    const last = runs.at(-1);
+    if (last && order.indexOf(last.at(-1)) === order.indexOf(i) - 1) last.push(i); else runs.push([i]);
+  }
+  return runs.map((r) => (r.length >= 3 ? `${WEEK_KO[r[0]]}–${WEEK_KO[r.at(-1)]}` : r.map((i) => WEEK_KO[i]).join("·"))).join("·");
+}
+
+// 시작일 문자열이면 매일 읽는 일정으로
+export const toSched = (s) => (typeof s === "string" ? [{ date: s, day: 1, mask: EVERY_DAY }] : s);
+
+// date 는 DAY 몇인가. 쉬는 요일이면 다음에 읽을 DAY 와 rest: true. 시작 전이면 0 이하(달력 기준, D-n 표시용)
+export function dayOnDate(sched, date) {
+  sched = toSched(sched);
+  const n = dayNo(date);
+  let seg = null;
+  for (const s of sched) if (dayNo(s.date) <= n) seg = s;
+  if (!seg) return { day: n - dayNo(sched[0].date) + 1, rest: false };
+  const from = dayNo(seg.date);
+  const span = n - from; // [seg.date, date) 사이 날 수
+  let count = Math.floor(span / 7) * maskCount(seg.mask);
+  for (let d = from + Math.floor(span / 7) * 7; d < n; d++) count += readsOn(seg.mask, d);
+  return { day: seg.day + count, rest: !readsOn(seg.mask, n) };
+}
+
+// DAY n 의 날짜 "YYYY-MM-DD"
+export function dateOfDaySched(sched, day) {
+  sched = toSched(sched);
+  if (day < 1) return dateOfDay(sched[0].date, day);
+  let seg = sched[0];
+  for (const s of sched) if (s.day <= day) seg = s;
+  const pc = maskCount(seg.mask);
+  let k = day - seg.day; // 이 구간에서 건너뛸 읽는 날 수
+  let d = dayNo(seg.date) + Math.floor(k / pc) * 7;
+  k -= Math.floor(k / pc) * pc;
+  for (;; d++) {
+    if (!readsOn(seg.mask, d)) continue;
+    if (k === 0) return dateOfNo(d);
+    k--;
+  }
+}
+
 // 하루 분량을 모두 체크했는가 (쉬는 날은 완료로 본다)
 export function isDayDone(chapters, checkedKeys) {
   return chapters.every((c) => checkedKeys.has(chapterKey(c)));

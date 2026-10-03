@@ -7,8 +7,10 @@
 // - 모임 모드(기본): 초대 코드로 입장, 시작일·읽기표를 모두가 함께 씀 (schema.sql)
 // - 개인 모드(MODE=personal): 코드 없이 시작, 사람마다 시작일·읽기표가 따로 (schema-personal.sql)
 import {
-  chapterKey, dateOfDay, dayIndex, formatChapters, kstTime, kstToday, parseChapters, validChapters,
+  chapterKey, dateOfDay, dayIndex, dayOnDate, EVERY_DAY, formatChapters, kstTime, kstToday, MIN_READ_DAYS,
+  parseChapters, validChapters, validMask, weekdaysText,
 } from "../public/shared/bible.js";
+import { LATEST_NOTICE } from "../public/shared/notices.js";
 import {
   buildPlan, fixedDays, isFixed, isRoadmap, ROADMAPS, yearLength,
 } from "../public/shared/roadmaps.js";
@@ -189,16 +191,31 @@ async function ensureMcheyneHorizon(env, me, today = kstToday()) {
   await insertPlanStmt(env, me.id, more, last + 1).run();
 }
 
-// 개인 모드 계획 선택값 검사 → { roadmap, perDay, startDate }
+// 개인 모드: 읽는 요일 일정 [{date, day, mask}] (요일을 바꾼 적 없으면 시작일부터 read_days)
+function memberSched(me) {
+  if (me.sched) { try { return JSON.parse(me.sched); } catch { /* 아래 기본값 */ } }
+  return [{ date: me.start_date, day: 1, mask: me.read_days ?? EVERY_DAY }];
+}
+
+function checkMask(value) {
+  const mask = Number(value);
+  if (!validMask(mask)) throw new HttpError(400, `읽는 요일은 ${MIN_READ_DAYS}일 이상 골라 주세요.`);
+  return mask;
+}
+
+// 개인 모드 계획 선택값 검사 → { roadmap, perDay, startDate, readDays }
 function checkPlanChoice(body) {
   const roadmap = body.roadmap ?? "flow397";
   if (!isRoadmap(roadmap)) throw new HttpError(400, "읽기 로드맵을 골라 주세요.");
   const perDay = isFixed(roadmap) ? 4 : Number(body.per_day ?? 3);
   if (!Number.isInteger(perDay) || perDay < 1 || perDay > 10) throw new HttpError(400, "하루 분량은 1–10장 사이로 골라 주세요.");
-  return { roadmap, perDay, startDate: checkDate(body.start_date) };
+  // 달력형(333·맥체인)은 날짜별 본문이라 매일만
+  const readDays = isFixed(roadmap) ? EVERY_DAY : checkMask(body.read_days ?? EVERY_DAY);
+  return { roadmap, perDay, startDate: checkDate(body.start_date), readDays };
 }
 
-const planText = (roadmap, perDay) => (isFixed(roadmap) ? ROADMAPS[roadmap].name : `${ROADMAPS[roadmap].name} · 하루 ${perDay}장`);
+const planText = (roadmap, perDay, readDays = EVERY_DAY) => (isFixed(roadmap) ? ROADMAPS[roadmap].name
+  : `${ROADMAPS[roadmap].name} · 하루 ${perDay}장${readDays === EVERY_DAY ? "" : ` · ${weekdaysText(readDays)}`}`);
 
 async function getStartDate(env, me) {
   if (isPersonal(env)) return me.start_date;
@@ -207,7 +224,7 @@ async function getStartDate(env, me) {
 }
 
 function setStartDateStmt(env, me, value) {
-  if (isPersonal(env)) return env.DB.prepare("UPDATE members SET start_date = ? WHERE id = ?").bind(value, me.id);
+  if (isPersonal(env)) return env.DB.prepare("UPDATE members SET start_date = ?, sched = NULL WHERE id = ?").bind(value, me.id); // 새 시작일부터 지금 요일로
   return value === null
     ? env.DB.prepare("DELETE FROM settings WHERE key = 'start_date'")
     : env.DB.prepare("INSERT INTO settings (key, value) VALUES ('start_date', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
@@ -421,6 +438,7 @@ async function handleApi(request, env, url, ctx) {
       mode: isPersonal(env) ? "personal" : "group",
       roadmap: isPersonal(env) ? me.roadmap : "flow397",
       perDay: isPersonal(env) ? me.per_day : 3,
+      ...(isPersonal(env) ? { readDays: me.read_days ?? EVERY_DAY, sched: memberSched(me), noticeSeen: me.notice_seen ?? 0 } : {}),
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
       ...(isPersonal(env) ? {} : { chatUnread: await chatUnread(env, me) }),
@@ -479,23 +497,49 @@ async function handleApi(request, env, url, ctx) {
   }
 
   const fixedPlan = isPersonal(env) && isFixed(me.roadmap);
-  if (fixedPlan && ((path.startsWith("/plan/") && path !== "/plan/choose") || path === "/settings" || /^\/history\/\d+\/revert$/.test(path))) {
+  if (fixedPlan && ((path.startsWith("/plan/") && path !== "/plan/choose") || path === "/settings" || path === "/read-days" || /^\/history\/\d+\/revert$/.test(path))) {
     throw new HttpError(403, `${ROADMAPS[me.roadmap].name} 읽기표는 바꿀 수 없어요. 설정의 '계획 바꾸기'를 이용해 주세요.`);
   }
 
   // 개인 모드: 읽기 계획(로드맵·하루 분량·시작일) 바꾸기. 새 계획으로 DAY 1 부터 다시 시작, 이전 체크는 보관.
   if (path === "/plan/choose" && method === "PUT" && isPersonal(env)) {
-    const { roadmap, perDay, startDate } = checkPlanChoice(await readBody(request));
+    const { roadmap, perDay, startDate, readDays } = checkPlanChoice(await readBody(request));
     const version = me.plan_version + 1;
     const next = { ...me, roadmap, per_day: perDay, start_date: startDate, plan_version: version };
     await env.DB.batch([
       env.DB.prepare("DELETE FROM member_plan WHERE member_id = ?").bind(me.id),
       insertPlanStmt(env, me.id, buildPlan(roadmap, perDay, startDate), 1),
-      env.DB.prepare("UPDATE members SET roadmap = ?, per_day = ?, start_date = ?, plan_version = ? WHERE id = ?")
-        .bind(roadmap, perDay, startDate, version, me.id),
+      env.DB.prepare("UPDATE members SET roadmap = ?, per_day = ?, start_date = ?, plan_version = ?, read_days = ?, sched = NULL WHERE id = ?")
+        .bind(roadmap, perDay, startDate, version, readDays, me.id),
       historyStmt(env, next, "plan", null,
-        `${planText(me.roadmap, me.per_day)} (${me.start_date} 시작)`, `${planText(roadmap, perDay)} (${startDate} 시작)`),
+        `${planText(me.roadmap, me.per_day, me.read_days)} (${me.start_date} 시작)`, `${planText(roadmap, perDay, readDays)} (${startDate} 시작)`),
     ]);
+    return json({ ok: true });
+  }
+
+  // 개인 모드: 읽는 요일 바꾸기 (오늘부터 적용, 지난 날의 DAY·날짜·체크는 그대로)
+  if (path === "/read-days" && method === "PUT" && isPersonal(env)) {
+    const mask = checkMask((await readBody(request)).mask);
+    const before = me.read_days ?? EVERY_DAY;
+    if (mask === before) return json({ ok: true, unchanged: true });
+    const today = kstToday();
+    let sched = null; // 시작 전이면 시작일부터 새 요일로
+    if (today > me.start_date) {
+      const cur = memberSched(me);
+      sched = JSON.stringify([...cur.filter((x) => x.date < today), { date: today, day: dayOnDate(cur, today).day, mask }]);
+    }
+    await env.DB.batch([
+      env.DB.prepare("UPDATE members SET read_days = ?, sched = ? WHERE id = ?").bind(mask, sched, me.id),
+      historyStmt(env, me, "read_days", null, String(before), String(mask)),
+    ]);
+    return json({ ok: true });
+  }
+
+  // 개인 모드: 업데이트 소식 확인 (번호는 커지기만 한다)
+  if (path === "/notices/seen" && method === "POST" && isPersonal(env)) {
+    const id = Number((await readBody(request)).id);
+    if (!Number.isInteger(id) || id < 0 || id > LATEST_NOTICE) throw new HttpError(400, "잘못된 요청이에요.");
+    await env.DB.prepare("UPDATE members SET notice_seen = MAX(notice_seen, ?) WHERE id = ?").bind(id, me.id).run();
     return json({ ok: true });
   }
 
@@ -561,6 +605,7 @@ async function handleApi(request, env, url, ctx) {
       throw new HttpError(404, "변경 기록을 찾지 못했어요.");
     }
     if (h.kind === "plan") throw new HttpError(409, "계획 바꾸기는 되돌릴 수 없어요. '계획 바꾸기'로 다시 골라 주세요.");
+    if (h.kind === "read_days") throw new HttpError(409, "읽는 요일은 설정의 '요일 바꾸기'로 다시 골라 주세요.");
     const note = `#${h.id} 되돌리기`;
     if (h.kind === "day") {
       const row = await getDayRow(env, me, h.day);
@@ -810,16 +855,16 @@ async function joinPersonal(request, env) {
   const body = await readBody(request);
   const n = cleanName(body.name);
   // roadmap·per_day 가 없으면(예전 화면) 예수님에서 시작하는 통독 · 하루 3장
-  const { roadmap, perDay, startDate: start_date } = checkPlanChoice(body);
+  const { roadmap, perDay, startDate: start_date, readDays } = checkPlanChoice(body);
   const token = newToken();
   const now = nowIso();
   const appNow = request.headers.get("X-App-Mode") === "standalone" ? now : null; // 앱에서 시작했으면 앱 기록도
   for (let attempt = 0; ; attempt++) {
     try {
       await env.DB.prepare(
-        `INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, created_at, last_seen_at, app_first_at, app_last_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, now, now, appNow, appNow).run();
+        `INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, read_days, notice_seen, created_at, last_seen_at, app_first_at, app_last_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, readDays, LATEST_NOTICE, now, now, appNow, appNow).run(); // 새 사람은 지난 소식 표시 없이
       break;
     } catch (e) {
       if (attempt >= 3) throw e; // 복구 코드가 우연히 겹치면 다시 만든다
@@ -860,6 +905,8 @@ function describeHistory(h) {
     summary = `전체 표 편집 (${before.length}일 → ${after.length}일, 바뀐 DAY: ${days || "없음"})`;
   } else if (h.kind === "plan") {
     summary = `읽기 계획: ${h.before_value} → ${h.after_value}`;
+  } else if (h.kind === "read_days") {
+    summary = `읽는 요일: ${weekdaysText(Number(h.before_value))} → ${weekdaysText(Number(h.after_value))}`;
   } else {
     summary = `시작일: ${h.before_value || "없음"} → ${h.after_value}`;
   }
@@ -910,9 +957,9 @@ async function runNotifications(env, now) {
     if (!slots.length) continue;
     if (!shared) await ensureMcheyneHorizon(env, m, today);
     const plan = shared ? shared.plan : await loadPlan(env, m);
-    const startDate = shared ? shared.startDate : m.start_date;
-    if (!startDate) continue;
-    const prog = progress(plan, startDate, today, checks.get(m.id) || new Map());
+    const sched = shared ? shared.startDate : memberSched(m);
+    if (!sched) continue;
+    const prog = progress(plan, sched, today, checks.get(m.id) || new Map());
     // 여러 칸이 한꺼번에 밀렸으면 가장 최근 칸 하나만 보낸다
     const slot = slots[slots.length - 1];
     const msg = buildMessage(slot, prog);
