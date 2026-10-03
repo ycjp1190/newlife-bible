@@ -15,10 +15,16 @@ test("순서형 로드맵 3개: 1,189장을 정확히 한 번씩", () => {
     assert.equal(keys.length, 1189, id);
     assert.deepEqual([...keys].sort(), all, id);
   }
-  // 성경통독 로드맵 순서 확인: A 는 마가복음으로 시작해 요한계시록으로, B 는 창세기 1–11 → 욥기
+  // 성경통독 로드맵 순서 확인: A 는 마가복음으로 시작해 요한계시록으로, 시간 순서는 「어? 성경이 읽어지네!」 순서
   assert.equal(chapterKey(chapterSequence("gospelA")[0].item), "마가복음 1");
   assert.equal(chapterKey(chapterSequence("gospelA")[16].item), "창세기 1");
-  assert.equal(chapterKey(chapterSequence("chrono")[11].item), "욥기 1");
+  const chrono = chapterSequence("chrono").map((s) => chapterKey(s.item));
+  assert.equal(chrono[0], "창세기 1");
+  assert.ok(chrono.indexOf("민수기 36") < chrono.indexOf("레위기 1")); // 교재대로 민수기 다음 레위기
+  assert.ok(chrono.indexOf("시편 59") < chrono.indexOf("사무엘상 21")); // 시편은 다윗의 사건 자리에
+  assert.ok(chrono.indexOf("말라기 4") < chrono.indexOf("욥기 1")); // 욥기는 구약 끝
+  assert.equal(chrono.indexOf("누가복음 1") + 2, chrono.indexOf("마태복음 1")); // 복음서는 사건 순서로 엮음
+  for (let c = 1; c < 28; c++) assert.ok(chrono.indexOf(`사도행전 ${c}`) < chrono.indexOf(`사도행전 ${c + 1}`)); // 행 9:32-11:18 이 먼저여도 장 순서 유지
   assert.equal(chapterKey(chapterSequence("chrono").at(-1).item), "요한계시록 22");
 });
 
@@ -186,4 +192,17 @@ test("기존 사용자: 옛 구조 DB 에 변경 파일을 적용해도 그대�
   // 체크도 계속 된다
   await call("/api/check", { method: "POST", token: "tok", body: { day: 2, chapter: "누가복음 5", checked: true } });
   assert.deepEqual((await call("/api/state", { token: "tok" })).data.checks[2].sort(), ["누가복음 4", "누가복음 5"]);
+});
+
+test("어성경 순서 파일: 절 단위 범위를 장으로, 1,189장 모두", async () => {
+  const { parseRef, buildEoseong } = await import("../scripts/build-eoseong.mjs");
+  const { readFileSync } = await import("node:fs");
+  const { EOSEONG } = await import("../public/shared/eoseong.js");
+  assert.deepEqual(parseRef("출1:1-4:17"), ["출애굽기", 1, 4, false]);
+  assert.deepEqual(parseRef("요7:11-8장"), ["요한복음", 7, 8, true]);
+  assert.deepEqual(parseRef("민9:1-14"), ["민수기", 9, 9, false]);
+  assert.deepEqual(parseRef("시59"), ["시편", 59, 59, false]);
+  assert.deepEqual(parseRef("요일1-5"), ["요한일서", 1, 5, false]);
+  // 생성 파일이 원본과 같은지 (원본만 고치고 다시 만들지 않은 경우 잡기)
+  assert.deepEqual(buildEoseong(readFileSync(new URL("../data/eoseong-order.txt", import.meta.url), "utf8")), EOSEONG);
 });
