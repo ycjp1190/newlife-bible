@@ -26,6 +26,7 @@ const S = {
   roadmap: "flow397", perDay: 3,
   readDays: EVERY_DAY, sched: null, noticeSeen: LATEST_NOTICE, // 개인 모드: 읽는 요일·일정, 확인한 업데이트 소식 번호
   wdDraft: EVERY_DAY, // 설정의 '요일 바꾸기' 창에서 고르는 중인 요일
+  admin: null, // 관리자 탭 통계 (개인 모드, 관리자 코드를 넣은 기기만)
   chatUnread: 0, chatDraft: "", chat: { msgs: [], loaded: false, more: false, reads: [] },
   pick: null, // 개인 모드 계획 고르기 { step, context: "join"|"change", name, roadmap, perDay, readDays, start }
   members: null, showAllMissed: false, push: "unknown",
@@ -228,12 +229,15 @@ const ICONS = {
   chat: `<path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H10l-4 3.5V16h0.5A2.5 2.5 0 014 13.5z"/><path d="M8.5 9.5h7M8.5 12.5h4.5"/>`,
   plan: `<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>`,
   settings: `<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.4l2 1.2M17.8 15.4l2 1.2M4.2 16.6l2-1.2M17.8 8.6l2-1.2"/>`,
+  admin: `<path d="M4 20h16"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/>`,
 };
-const TAB_NAMES = { today: "오늘", together: "함께", chat: "대화", plan: "일정", settings: "설정" };
+const TAB_NAMES = { today: "오늘", together: "함께", chat: "대화", plan: "일정", settings: "설정", admin: "관리자" };
 const GROUP_ONLY_TABS = ["together", "chat"];
+// 관리자 탭: 개인 모드에서 이 기기에 관리자 코드를 넣었을 때만
+const hasAdmin = () => personal() && !!store.get("adminCode");
 
 function navHtml() {
-  const tabs = Object.keys(TAB_NAMES).filter((t) => !(personal() && GROUP_ONLY_TABS.includes(t)));
+  const tabs = Object.keys(TAB_NAMES).filter((t) => !(personal() && GROUP_ONLY_TABS.includes(t)) && (t !== "admin" || hasAdmin()));
   const badge = (t) => {
     if (t === "chat" && S.chatUnread > 0 && S.tab !== "chat") {
       return `<span class="tab-badge" aria-label="안 읽은 메시지 ${S.chatUnread}개">${S.chatUnread > 99 ? "99+" : S.chatUnread}</span>`;
@@ -980,16 +984,10 @@ function renderSettings() {
       ${fixedPlan() ? "" : `<div class="setting-row"><div class="main">읽는 요일 <b>${weekdaysText(S.readDays)}</b>
           <small>완독 예정 ${niceDate(dateOf(total()), true)}</small></div>
         <button class="btn secondary" data-action="read-days">요일 바꾸기</button></div>`}
+      ${fixedPlan() ? "" : `<form class="plan-start" id="start-form">${startFieldsHtml()}</form>`}
       <button class="btn secondary block mt" data-action="plan-change">계획 바꾸기</button>
-    </div>` : ""}
-
-    ${fixedPlan() ? "" : `<h2 class="section">${personal() ? "나의 시작일 (DAY 1)" : "모임 시작일 (DAY 1)"}</h2>
-    <form class="card" id="start-form">
-      <label class="field"><span>${personal() ? "시작일을 바꾸면 날짜별 읽을 곳이 함께 바뀌어요" : "모든 사람에게 같이 적용돼요"}</span>
-        <input class="input" type="date" name="start" value="${esc(S.startDate || "")}" required></label>
-      <button class="btn" type="submit">시작일 저장</button>
-      ${S.startDate ? `<p class="hint">현재: ${niceDate(S.startDate, true)} · 마지막 날 ${niceDate(dateOf(total()), true)}</p>` : ""}
-    </form>`}
+    </div>` : `<h2 class="section">모임 시작일 (DAY 1)</h2>
+    <form class="card" id="start-form">${startFieldsHtml()}</form>`}
 
     <h2 class="section">도움말</h2>
     <div class="card">
@@ -1016,7 +1014,16 @@ function renderSettings() {
     </div>` : ""}
 
     <button class="btn ghost block mt" data-action="sign-out">이 기기에서 나가기</button>
+    ${personal() ? `<p class="center"><button class="admin-link" data-action="${hasAdmin() ? "admin-logout" : "admin-open"}">${hasAdmin() ? "관리자 코드 지우기" : "관리자"}</button></p>` : ""}
     ${navHtml()}`;
+}
+
+// 시작일(DAY 1) 칸 — 개인 모드는 '읽기 계획' 박스 안, 모임 모드는 따로
+function startFieldsHtml() {
+  return `<label class="field"><span>${personal() ? "시작일 (DAY 1) · 바꾸면 날짜별 읽을 곳이 함께 바뀌어요" : "모든 사람에게 같이 적용돼요"}</span>
+      <input class="input" type="date" name="start" value="${esc(S.startDate || "")}" required></label>
+    <button class="btn" type="submit">시작일 저장</button>
+    ${S.startDate ? `<p class="hint">현재: ${niceDate(S.startDate, true)} · 마지막 날 ${niceDate(dateOf(total()), true)}</p>` : ""}`;
 }
 
 // 내 정보 수정 창 (이름)
@@ -1217,8 +1224,9 @@ function render() {
   if (!S.token) { renderJoin(); return; }
   if (!S.loaded) { $("#app").innerHTML = `<div class="splash">${brandHtml()}</div>`; return; }
   if (personal() && GROUP_ONLY_TABS.includes(S.tab)) S.tab = "today";
+  if (S.tab === "admin" && !hasAdmin()) S.tab = "settings";
   $("#app").classList.toggle("chat-mode", S.tab === "chat");
-  ({ today: renderToday, together: renderTogether, chat: renderChat, plan: renderPlan, settings: renderSettings }[S.tab] || renderToday)();
+  ({ today: renderToday, together: renderTogether, chat: renderChat, plan: renderPlan, settings: renderSettings, admin: renderAdmin }[S.tab] || renderToday)();
   const nav = $("nav.tabs");
   if (nav) document.documentElement.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
   syncChatSocket();
@@ -1298,6 +1306,7 @@ document.addEventListener("click", async (ev) => {
     window.scrollTo(0, 0);
     render();
     if (S.tab === "together") loadMembers();
+    if (S.tab === "admin") loadAdmin();
   } else if (a === "toggle-missed") { S.showAllMissed = !S.showAllMissed; render(); }
   else if (a === "open-day") openDay(Number(el.dataset.day));
   else if (a === "close-sheet") closeSheet();
@@ -1336,8 +1345,15 @@ document.addEventListener("click", async (ev) => {
   else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);
   else if (a === "chat-delete") deleteChat(Number(el.dataset.id));
   else if (a === "chat-older") loadOlderChat();
-  else if (a === "admin-refresh") loadAdmin(store.get("adminCode") || "");
-  else if (a === "admin-logout") { store.del("adminCode"); renderAdminLogin(); }
+  else if (a === "admin-open") openAdminLogin();
+  else if (a === "admin-refresh") loadAdmin();
+  else if (a === "admin-logout") {
+    if (!confirm("이 기기에서 관리자 코드를 지울까요? 관리자 탭이 사라져요.")) return;
+    store.del("adminCode");
+    S.admin = null;
+    render();
+    toast("관리자 코드를 지웠어요.");
+  }
   else if (a === "admin-delete") {
     const code = store.get("adminCode") || "";
     if (!confirm(`#${el.dataset.id} ${el.dataset.name} 계정과 모든 기록을 지울까요? 되돌릴 수 없어요.`)) return;
@@ -1345,7 +1361,7 @@ document.addEventListener("click", async (ev) => {
       const res = await fetch("/api/admin/delete", { method: "POST", headers: { "Content-Type": "application/json", "X-Admin-Code": encodeURIComponent(code) }, body: JSON.stringify({ id: Number(el.dataset.id) }) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "지우지 못했어요.");
       toast("지웠어요.");
-      loadAdmin(code);
+      loadAdmin();
     } catch (e) { toast(e.message); }
   }
   else if (a === "show-code") openRecoveryInfo();
@@ -1387,7 +1403,7 @@ document.addEventListener("input", (ev) => {
 document.addEventListener("submit", async (ev) => {
   const f = ev.target;
   ev.preventDefault();
-  if (f.id === "admin-form") loadAdmin(f.code.value.trim());
+  if (f.id === "admin-form") submitAdminCode(f);
   else if (f.id === "chat-form") sendChat(f);
   else if (f.id === "join-form") submitJoin(f);
   else if (f.id === "pick-name-form") {
@@ -1425,7 +1441,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// ── 관리자 통계 (개인용, 주소 끝에 ?admin) ─────────────
+// ── 관리자 탭 (개인 모드, 설정 맨 아래 '관리자'에서 코드를 넣은 기기만) ─────────────
 function agoText(iso) {
   if (!iso) return "없음";
   const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -1435,27 +1451,71 @@ function agoText(iso) {
   return `${Math.round(min / 60 / 24)}일 전`;
 }
 
-function renderAdminLogin(message = "") {
-  $("#app").innerHTML = `
-    <header class="top"><h1>관리자 통계</h1></header>
-    <form class="card" id="admin-form">
-      <label class="field"><span>관리자 코드</span>
-        <input class="input" name="code" type="password" autocomplete="off" required></label>
-      <button class="btn block" type="submit">보기</button>
-      ${message ? `<p class="hint error">${esc(message)}</p>` : ""}
-    </form>`;
-}
-
-async function loadAdmin(code) {
-  $("#app").innerHTML = `<header class="top"><h1>관리자 통계</h1></header><p class="empty">불러오는 중…</p>`;
+// 관리자 통계 불러오기. 코드가 틀리면 null, 연결이 안 되면 오류
+async function fetchAdmin(code) {
   let res;
   try {
     res = await fetch("/api/admin/stats", { headers: { "X-Admin-Code": encodeURIComponent(code) } });
-  } catch { renderAdminLogin("인터넷 연결을 확인해 주세요."); return; }
+  } catch { throw new Error("인터넷 연결을 확인해 주세요."); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { store.del("adminCode"); renderAdminLogin(data.error || "볼 수 없어요."); return; }
-  store.set("adminCode", code);
-  const { summary: sm, users } = data;
+  if (res.status === 403 || res.status === 404) return null;
+  if (!res.ok) throw new Error(data.error || "문제가 생겼어요.");
+  return data;
+}
+
+function openAdminLogin(message = "") {
+  openSheet(`
+    <h3>관리자</h3>
+    <form id="admin-form">
+      <label class="field"><span>관리자 코드</span>
+        <input class="input" name="code" type="password" autocomplete="off" required></label>
+      ${message ? `<p class="hint error">${esc(message)}</p>` : ""}
+      <button class="btn block mt" type="submit">확인</button>
+      <p class="hint">코드가 맞으면 이 기기에 관리자 탭이 생겨요.</p>
+    </form>`);
+}
+
+async function submitAdminCode(form) {
+  const code = form.code.value.trim();
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const data = await fetchAdmin(code);
+    if (!data) { openAdminLogin("관리자 코드가 맞지 않아요."); return; }
+    store.set("adminCode", code);
+    S.admin = data;
+    closeSheet();
+    S.tab = "admin";
+    store.set("tab", S.tab);
+    window.scrollTo(0, 0);
+    render();
+  } catch (e) { toast(e.message); btn.disabled = false; }
+}
+
+async function loadAdmin() {
+  const code = store.get("adminCode");
+  if (!code) return;
+  try {
+    const data = await fetchAdmin(code);
+    if (!data) { // 코드가 바뀌었거나 지워짐
+      store.del("adminCode");
+      S.admin = null;
+      render();
+      toast("관리자 코드가 맞지 않아 관리자 탭을 닫았어요.");
+      return;
+    }
+    S.admin = data;
+    if (S.tab === "admin") render();
+  } catch (e) { toast(e.message); }
+}
+
+function renderAdmin() {
+  const head = `<header class="top"><h1>관리자 통계</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>`;
+  if (!S.admin) {
+    $("#app").innerHTML = `${head}<p class="empty">불러오는 중…</p>${navHtml()}`;
+    return;
+  }
+  const { summary: sm, users } = S.admin;
   const stat = (n, label) => `<div><b>${n}</b><span>${label}</span></div>`;
   const rowHtml = (u) => `
     <li class="admin-user ${u.test ? "is-test" : ""}">
@@ -1469,7 +1529,7 @@ async function loadAdmin(code) {
   const rows = users.filter((u) => !u.test).sort(byRecent).map(rowHtml).join("");
   const testRows = users.filter((u) => u.test).sort(byRecent).map(rowHtml).join("");
   $("#app").innerHTML = `
-    <header class="top"><h1>관리자 통계</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>
+    ${head}
     <button class="btn secondary block" data-action="admin-notices" style="margin-bottom:14px">개인용 업데이트 내용${Number(store.get("adminNoticeSeen") || 0) < LATEST_NOTICE ? ` <span class="chip warn" id="admin-notice-new">새 소식</span>` : ""}</button>
     <div class="admin-stats">
       ${stat(sm.total, "전체 사용자")}
@@ -1484,20 +1544,12 @@ async function loadAdmin(code) {
     <ul class="card list admin-list">${rows || `<p class="empty">아직 없어요.</p>`}</ul>
     ${testRows ? `<h2 class="section">테스트 계정 <small>통계에서 빠짐 · ${sm.tests}개</small></h2><ul class="card list admin-list">${testRows}</ul>` : ""}
     <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (2026년 10월 2일 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
-    ${document.querySelector('meta[name="admin-app"]')
-      ? (isStandalone() ? "" : `<p class="hint">💡 이 화면을 <b>홈 화면에 추가</b>(갤럭시: 메뉴 → 앱 설치)하면 '새인생 관리자' 앱으로 바로 열 수 있어요.</p>`)
-      : `<p class="hint">💡 관리자 앱으로 설치하려면 <a href="https://malsseum-admin.newlife-bible.workers.dev/">malsseum-admin.newlife-bible.workers.dev</a> 를 열어 홈 화면에 추가하세요. (개인용 앱과 주소가 달라 따로 설치돼요)</p>`}
-    <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>`;
+    <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>
+    ${navHtml()}`;
 }
 
 // ── 시작 ──────────────────────────────────────────────
 async function start() {
-  // 관리자 앱 주소(malsseum-admin)이거나 개인용 주소 끝에 ?admin
-  if (document.querySelector('meta[name="admin-app"]') || new URLSearchParams(location.search).has("admin")) {
-    const code = store.get("adminCode");
-    if (code) loadAdmin(code); else renderAdminLogin();
-    return;
-  }
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   const params = new URLSearchParams(location.search);
   const invite = params.get("invite");
@@ -1522,6 +1574,7 @@ async function start() {
   await detectPush().catch(() => {});
   render();
   if (S.tab === "together") loadMembers();
+  if (S.tab === "admin") loadAdmin();
 }
 
 start();

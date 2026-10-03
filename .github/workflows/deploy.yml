@@ -59,10 +59,8 @@ jobs:
         run: npx wrangler deploy --env personal
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Cloudflare 배포 (개인용 관리자 앱)
-        run: |
-          if [ -n "$ADMIN_CODE" ]; then printf '%s' "$ADMIN_CODE" | npx wrangler secret put ADMIN_CODE --env admin; fi
-          npx wrangler deploy --env admin
+      # 관리자 화면을 개인용 앱의 관리자 탭으로 옮겨서, 예전 관리자 앱 주소(malsseum-admin)를 한 번 지운다 (다음 커밋에서 이 단계 삭제)
+      - name: 예전 개인용 관리자 앱 지우기 (일회성)
+        run: npx wrangler delete malsseum-admin --force || true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ADMIN_CODE: ${{ secrets.ADMIN_CODE }}

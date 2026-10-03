@@ -331,3 +331,7 @@ nav.tabs button { position: relative; }
 /* 요일 고르기: 7개가 한 줄에 */
 .wd-chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .wd-chips .pchip { min-width: 0; padding: 9px 0; }
+/* 읽기 계획 박스 안의 시작일 */
+.plan-start { margin-top: 12px; }
+/* 설정 맨 아래 작은 '관리자' 글자 */
+.admin-link { border: 0; background: none; color: var(--muted); font-size: 12.5px; opacity: .7; padding: 8px 12px; }
