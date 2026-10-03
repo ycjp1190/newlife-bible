@@ -198,19 +198,8 @@ function checksHtml(day) {
   }).join("")}</ul>`;
 }
 
-// 개인 모드: 홈 화면 앱이 아닌 브라우저로 열었으면 설치 안내 (닫으면 그 기기에서 7일간 숨김)
-const INSTALL_HIDE_MS = 7 * 86400000;
-const showInstallNotice = () => personal() && !isStandalone() && Date.now() - Number(store.get("installHiddenAt") || 0) > INSTALL_HIDE_MS;
-function installNotice() {
-  if (!showInstallNotice()) return "";
-  return `<div class="notice"><p><b>홈 화면에 앱을 추가</b>하면 앱처럼 바로 열리고, 매일 읽을 곳을 알림으로 받을 수 있어요.</p>
-    <button class="btn" data-action="install-guide">방법 보기</button>
-    <button class="btn ghost" data-action="install-hide" aria-label="안내 닫기">닫기</button></div>`;
-}
-
 function pushNotice() {
   if (S.push === "on" || S.push === "unknown") return "";
-  if (S.push === "need-install" && showInstallNotice()) return ""; // 위 설치 안내와 겹침
   const text = {
     "need-install": "아이폰은 <b>홈 화면에 추가</b>해야 알림을 받을 수 있어요.",
     unsupported: "이 브라우저는 알림을 지원하지 않아요. 크롬이나 삼성 인터넷(갤럭시), 사파리(아이폰)에서 열어 주세요.",
@@ -552,7 +541,6 @@ function renderToday() {
 
   $("#app").innerHTML = `
     <header class="top"><h1>${appName()}</h1><span class="date">${niceDate(S.today)}</span></header>
-    ${installNotice()}
     ${pushNotice()}
     ${main}
     ${missedHtml}
@@ -1200,23 +1188,63 @@ async function revert(id) {
   } catch (e) { toast(e.message); }
 }
 
+// ── 앱 설치 안내 ──────────────────────────────────────
+// 홈 화면 앱이 아니라 브라우저로 열면 열 때마다 설치 방법 창을 띄운다 (닫기만 있고 '그만 보기'는 없음)
+let installEvent = null; // 갤럭시 크롬·삼성 인터넷: 바로 설치 창을 띄울 수 있을 때 받는 이벤트
+window.addEventListener("beforeinstallprompt", (ev) => {
+  ev.preventDefault();
+  installEvent = ev;
+  if ($("#install-guide")) openInstallGuide(); // 열려 있는 안내에 [지금 앱 설치] 버튼 추가
+});
+window.addEventListener("appinstalled", () => {
+  installEvent = null;
+  if ($("#install-guide")) closeSheet();
+  toast("설치됐어요. 홈 화면의 앱으로 열어 주세요.");
+});
+
+// 카카오톡·네이버 등 앱 안의 브라우저 (여기서는 홈 화면 추가가 안 됨)
+const inAppBrowser = () => /KAKAOTALK|NAVER\(|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp/i.test(navigator.userAgent);
+
+let lastInstallPopup = 0;
+function autoInstallGuide() {
+  if (isStandalone() || sheetOpen() || Date.now() - lastInstallPopup < 10 * 60000) return;
+  lastInstallPopup = Date.now();
+  openInstallGuide();
+}
+
+async function installNow() {
+  if (!installEvent) { toast("브라우저 메뉴에서 '홈 화면에 추가' 또는 '앱 설치'를 눌러 주세요."); return; }
+  installEvent.prompt();
+  const { outcome } = await installEvent.userChoice.catch(() => ({}));
+  if (outcome === "accepted") installEvent = null;
+}
+
 function openInstallGuide() {
   const share = `<svg class="share-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;vertical-align:-3px"><path d="M12 3v12M8 7l4-4 4 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>`;
-  openSheet(`
-    <h3>홈 화면에 앱 추가하기</h3>
-    <h2 class="section">아이폰 (iOS 16.4 이상)</h2>
+  const iphone = `<h2 class="section">아이폰 (iOS 16.4 이상)</h2>
     <ol class="steps">
       <li><b>사파리(Safari)</b>로 이 주소를 엽니다.</li>
       <li>아래쪽 공유 버튼 ${share} 을 누릅니다.</li>
       <li><b>홈 화면에 추가</b>를 누르고, 오른쪽 위 <b>추가</b>를 누릅니다.</li>
       <li>홈 화면에 생긴 <b>${homeName()}</b> 아이콘으로 들어가 입장한 뒤 <b>알림 켜기</b>를 누릅니다.</li>
-    </ol>
-    <h2 class="section">갤럭시</h2>
+    </ol>`;
+  const galaxy = `<h2 class="section">갤럭시</h2>
     <ol class="steps">
       <li><b>크롬</b> 또는 <b>삼성 인터넷</b>으로 이 주소를 엽니다.</li>
       <li>메뉴(⋮ 또는 ≡)에서 <b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 누릅니다.</li>
       <li>앱으로 들어가 <b>알림 켜기</b>를 누르고 <b>허용</b>합니다.</li>
-    </ol>`);
+    </ol>`;
+  const inApp = inAppBrowser()
+    ? `<div class="notice warn"><p>지금은 카카오톡 같은 앱 안에서 열려 있어요. 오른쪽 위 메뉴에서 <b>${isIOS() ? "Safari로 열기" : "다른 브라우저로 열기(크롬·삼성 인터넷)"}</b>를 누른 뒤 아래 순서대로 해 주세요.</p></div>`
+    : "";
+  openSheet(`<div id="install-guide">
+    <h3>홈 화면에 앱 추가하기</h3>
+    <p class="muted" style="margin:0 0 12px">홈 화면에 추가하면 앱처럼 바로 열리고, 매일 읽을 곳을 알림으로 받을 수 있어요.</p>
+    ${inApp}
+    ${installEvent ? `<button class="btn block" data-action="install-now">지금 앱 설치</button>` : ""}
+    ${isIOS() ? iphone + galaxy : galaxy + iphone}
+    <button class="btn secondary block mt" data-action="close-sheet">닫기</button>
+  </div>`);
 }
 
 // ── 렌더링 ────────────────────────────────────────────
@@ -1339,7 +1367,7 @@ document.addEventListener("click", async (ev) => {
     store.set("adminNoticeSeen", String(LATEST_NOTICE));
     $("#admin-notice-new")?.remove();
   }
-  else if (a === "install-hide") { store.set("installHiddenAt", String(Date.now())); render(); }
+  else if (a === "install-now") installNow();
   else if (a === "member") openMember(Number(el.dataset.id));
   else if (a === "chat-msg") openChatMessage(Number(el.dataset.id));
   else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);
@@ -1439,6 +1467,7 @@ document.addEventListener("visibilitychange", () => {
     refresh();
     if (S.tab === "together") loadMembers();
   }
+  if (document.visibilityState === "visible") autoInstallGuide(); // 브라우저로 다시 열면 설치 안내 (10분 간격)
 });
 
 // ── 관리자 탭 (개인 모드, 설정 맨 아래 '관리자'에서 코드를 넣은 기기만) ─────────────
@@ -1563,8 +1592,9 @@ async function start() {
     const config = await fetch("/api/config").then((r) => r.json());
     if (config.mode) { S.mode = config.mode; store.set("mode", S.mode); }
   } catch { /* 인터넷이 안 되면 마지막으로 알던 모드 사용 */ }
-  if (!S.token) { render(); return; }
+  if (!S.token) { render(); autoInstallGuide(); return; }
   render();
+  autoInstallGuide();
   try {
     await loadState();
   } catch (e) {
