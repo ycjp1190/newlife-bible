@@ -660,7 +660,7 @@ async function openMember(id) {
 }
 
 // ── 화면: 대화 (모임 단톡방) ──────────────────────────
-const REACTIONS = ["🙏", "❤️", "👍"];
+const REACTIONS = ["🙏", "❤️", "👍", "👏", "🙌", "😊", "😢", "🔥"]; // 공감 (화면과 서버가 같아야 함)
 const kstDateOf = (iso) => new Date(Date.parse(iso) + 9 * 3600000).toISOString().slice(0, 10);
 const timeOf = (iso) => new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "numeric", minute: "2-digit" });
 const nameOf = (id) => S.members?.find((m) => m.id === id)?.name || "";

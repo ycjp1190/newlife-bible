@@ -62,6 +62,12 @@ export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
   {
+    id: 4,
+    date: "2026-10-04",
+    title: "공감 이모티콘 추가",
+    items: ["대화 공감에 👏 🙌 😊 😢 🔥 를 더했어요 (🙏 ❤️ 👍 포함 8가지). 메시지를 누르면 골라요"],
+  },
+  {
     id: 3,
     date: "2026-10-04",
     title: "미리 읽은 곳 표시",

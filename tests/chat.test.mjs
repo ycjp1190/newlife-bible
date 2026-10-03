@@ -40,6 +40,8 @@ test("대화: 보내기·불러오기·안 읽은 수·공감·지우기", async
   // 공감 켜기·끄기, 새 메시지 확인할 때 공감 변화도 함께 온다
   assert.equal((await call(`/api/chat/${m1.id}/react`, { method: "POST", token: b, body: { emoji: "🙏" } })).data.on, true);
   assert.equal((await call(`/api/chat/${m1.id}/react`, { method: "POST", token: b, body: { emoji: "😀" } })).status, 400);
+  assert.equal((await call(`/api/chat/${m1.id}/react`, { method: "POST", token: a, body: { emoji: "👏" } })).data.on, true); // 박수
+  await call(`/api/chat/${m1.id}/react`, { method: "POST", token: a, body: { emoji: "👏" } });
   const poll = (await call(`/api/chat?after=${list.at(-1).id}&from=${m1.id}`, { token: a })).data;
   assert.equal(poll.messages.length, 0);
   assert.deepEqual(poll.updates.find((m) => m.id === m1.id).reactions, { "🙏": [2] });

@@ -702,7 +702,7 @@ async function handleApi(request, env, url, ctx) {
 }
 
 // ── 대화(단톡방) ───────────────────────────────────────
-const REACTIONS = ["🙏", "❤️", "👍"];
+const REACTIONS = ["🙏", "❤️", "👍", "👏", "🙌", "😊", "😢", "🔥"]; // 공감 (화면과 서버가 같아야 함)
 const MSG_COLS = `m.id, m.member_id, mem.name, m.kind, m.day,
   CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at IS NOT NULL AS deleted`;
 
@@ -808,7 +808,7 @@ async function handleChat(request, env, ctx, me, path, method, url) {
   if (reactMatch && method === "POST") {
     const id = Number(reactMatch[1]);
     const { emoji } = await readBody(request);
-    if (!REACTIONS.includes(emoji)) throw new HttpError(400, "공감은 🙏 ❤️ 👍 중에서 골라 주세요.");
+    if (!REACTIONS.includes(emoji)) throw new HttpError(400, `공감은 ${REACTIONS.join(" ")} 중에서 골라 주세요.`);
     const msg = await env.DB.prepare("SELECT deleted_at FROM messages WHERE id = ?").bind(id).first();
     if (!msg || msg.deleted_at) throw new HttpError(404, "메시지를 찾지 못했어요.");
     const had = await env.DB.prepare("SELECT 1 FROM reactions WHERE message_id = ? AND member_id = ? AND emoji = ?").bind(id, me.id, emoji).first();
