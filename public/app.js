@@ -526,7 +526,8 @@ function renderToday() {
       ${checksHtml(t)}
       ${videoButton(S.today)}
       ${done
-        ? `<p class="done-banner">🎉 오늘 말씀 완료!${streak() >= 2 ? `<br><span class="streak-line">🔥 ${streak()}일 연속으로 읽고 있어요</span>` : ""}</p>`
+        ? `<p class="done-banner">🎉 오늘 말씀 완료!${streak() >= 2 ? `<br><span class="streak-line">🔥 ${streak()}일 연속으로 읽고 있어요</span>` : ""}</p>
+          ${personal() ? `<p class="center" style="margin:6px 0 0"><button class="btn ghost" data-action="share-app">💌 친구에게도 알려 주기</button></p>` : ""}`
         : streak() >= 2 ? `<p class="streak-hint">🔥 ${streak()}일 연속 중 — 오늘도 이어 가요</p>` : ""}
     </div>`;
   }
@@ -1005,6 +1006,12 @@ function renderSettings() {
         : `<button class="btn secondary block mt" data-action="tab" data-tab="plan">전체 일정 보기 · 범위 바꾸기</button>`}
     </div>
 
+    ${personal() ? `<h2 class="section">주변에 알리기</h2>
+    <div class="card">
+      <p style="margin:0 0 12px">함께 성경을 읽고 싶은 분께 이 앱을 알려 주세요. 카카오톡·문자로 링크를 보낼 수 있어요.</p>
+      <button class="btn block" data-action="share-app">앱 공유하기</button>
+    </div>` : ""}
+
     <h2 class="section">도움말</h2>
     <div class="card">
       <button class="btn ${isStandalone() ? "secondary" : ""} block" data-action="install-guide">홈 화면에 앱 추가하는 방법</button>
@@ -1224,6 +1231,22 @@ async function revert(id) {
   } catch (e) { toast(e.message); }
 }
 
+// ── 앱 공유 (개인용) ──────────────────────────────────
+// 폰의 공유 창(카카오톡·문자 등)을 띄우고, 안 되는 브라우저는 링크를 복사한다
+async function shareApp() {
+  const url = `${location.origin}/`;
+  const text = "말씀 읽고 새 인생 (개인용) — 나에게 맞는 순서와 분량으로 성경 전체를 읽어요. 매일 읽을 곳을 알려 주고 장마다 체크해요. 함께 읽어요!";
+  if (navigator.share) {
+    try { await navigator.share({ title: appName(), text, url }); return; } catch (e) { if (e?.name === "AbortError") return; }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    toast("링크를 복사했어요. 카카오톡이나 문자에 붙여 넣어 주세요.");
+  } catch {
+    openSheet(`<h3>앱 공유하기</h3><p class="muted">아래 주소를 길게 눌러 복사해 주세요.</p><p class="passage" style="word-break:break-all">${esc(url)}</p>`);
+  }
+}
+
 // ── 앱 설치 안내 ──────────────────────────────────────
 // 홈 화면 앱이 아니라 브라우저로 열면 열 때마다 설치 방법 창을 띄운다 (닫기만 있고 '그만 보기'는 없음)
 let installEvent = null; // 갤럭시 크롬·삼성 인터넷: 바로 설치 창을 띄울 수 있을 때 받는 이벤트
@@ -1405,6 +1428,7 @@ document.addEventListener("click", async (ev) => {
     $("#admin-notice-new")?.remove();
   }
   else if (a === "install-now") installNow();
+  else if (a === "share-app") shareApp();
   else if (a === "member") openMember(Number(el.dataset.id));
   else if (a === "chat-msg") openChatMessage(Number(el.dataset.id));
   else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);

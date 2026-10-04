@@ -104,3 +104,12 @@ test("관리자 화면은 개인용 앱 안의 탭: ?admin 으로 열어도 일�
   }
   assert.equal(await get("/manifest.webmanifest"), "asset:/personal/manifest.webmanifest");
 });
+
+test("개인용 링크 미리보기: 공유했을 때 제목·설명·아이콘", async () => {
+  const html = '<title>말씀 읽고 새 인생</title><meta name="description" content="397일 성경읽기"><meta name="apple-mobile-web-app-title" content="말씀 새 인생">';
+  const env = { DB: createLocalDB({ mode: "personal" }), MODE: "personal", ASSETS: { fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }) } };
+  const page = await (await worker.fetch(new Request("https://p.test/"), env, { waitUntil() {} })).text();
+  assert.match(page, /property="og:title" content="말씀 읽고 새 인생 \(개인용\)"/);
+  assert.match(page, /property="og:image" content="https:\/\/p\.test\/icons\/icon-512\.png"/);
+  assert.doesNotMatch(page, /397일 성경읽기/);
+});

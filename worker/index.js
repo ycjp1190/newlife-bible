@@ -103,6 +103,15 @@ function serveAsset(request, env, url) {
   return env.ASSETS.fetch(request);
 }
 
+// 개인용 링크를 카카오톡 등에 공유했을 때 보이는 미리보기 (제목·설명·아이콘)
+const SHARE_DESC = "나에게 맞는 순서와 분량으로 성경 전체를 읽어요. 매일 읽을 곳을 알려 주고 장마다 체크해요.";
+const shareMeta = (origin) => `<meta name="description" content="${SHARE_DESC}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="말씀 읽고 새 인생 (개인용)">
+  <meta property="og:description" content="${SHARE_DESC}">
+  <meta property="og:url" content="${origin}/">
+  <meta property="og:image" content="${origin}/icons/icon-512.png">`;
+
 // 개인 모드 첫 화면: 브라우저 탭 제목과 아이폰 홈 화면 이름에 "개인용"을 붙인다
 // (관리자 화면은 개인용 앱 안의 관리자 탭 — 설정의 '관리자'에서 코드를 넣으면 생긴다)
 async function personalIndex(request, env) {
@@ -111,7 +120,8 @@ async function personalIndex(request, env) {
   let html = await res.text();
   html = html
     .replace("<title>말씀 읽고 새 인생</title>", "<title>말씀 읽고 새 인생 (개인용)</title>")
-    .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="말씀 새 인생 개인용"');
+    .replace('name="apple-mobile-web-app-title" content="말씀 새 인생"', 'name="apple-mobile-web-app-title" content="말씀 새 인생 개인용"')
+    .replace(/<meta name="description" content="[^"]*">/, () => shareMeta(new URL(request.url).origin));
   const headers = new Headers(res.headers);
   headers.delete("Content-Length");
   headers.delete("ETag");
