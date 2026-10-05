@@ -701,6 +701,11 @@ function chatListHtml() {
       prevDate = date;
       prevAuthor = null;
     }
+    if (m.kind === "join") { // 새 모임원 환영 인사
+      html += `<div class="chat-done chat-join" data-action="chat-msg" data-id="${m.id}"><span>${esc(m.body)}</span>${reactionsHtml(m)}</div>`;
+      prevAuthor = null;
+      continue;
+    }
     if (m.kind === "done") {
       html += `<div class="chat-done" data-action="chat-msg" data-id="${m.id}"><span>🎉 <b>${esc(m.name)}</b>님이 오늘 말씀을 다 읽었어요</span>${reactionsHtml(m)}</div>`;
       prevAuthor = null;
@@ -906,7 +911,7 @@ function openChatMessage(id) {
   const who = Object.entries(m.reactions || {}).filter(([, ids]) => ids.length)
     .map(([emoji, ids]) => `<li>${emoji} ${ids.map((i) => esc(nameOf(i) || "?")).join(", ")}</li>`).join("");
   openSheet(`
-    <h3>${m.kind === "done" ? "읽기 완료 소식" : mine ? "내 메시지" : `${esc(m.name)}님의 메시지`}</h3>
+    <h3>${m.kind === "done" ? "읽기 완료 소식" : m.kind === "join" ? "새 모임원 소식" : mine ? "내 메시지" : `${esc(m.name)}님의 메시지`}</h3>
     <p class="muted" style="margin:0 0 14px;white-space:pre-wrap">${m.kind === "done" ? `${esc(m.name)}님이 오늘 말씀을 다 읽었어요 🎉` : esc(m.body.length > 120 ? m.body.slice(0, 120) + "…" : m.body)}</p>
     <div class="rx-big">${REACTIONS.map((e) => `<button class="${(m.reactions?.[e] || []).includes(S.me.id) ? "on" : ""}" data-action="chat-react" data-id="${m.id}" data-emoji="${e}" aria-label="${e} 공감">${e}</button>`).join("")}</div>
     ${who ? `<h2 class="section">공감한 사람</h2><ul class="plain rx-who">${who}</ul>` : ""}

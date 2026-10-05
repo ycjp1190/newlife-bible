@@ -338,3 +338,5 @@ nav.tabs button { position: relative; }
 .ahead small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
 /* 문장 속 글자 버튼 */
 .link-btn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; }
+/* 대화: 새 모임원 환영 인사 */
+.chat-join span { background: var(--accent-soft); color: var(--ink); border-radius: 14px; padding: 8px 14px; font-size: 13.5px; line-height: 1.5; max-width: 300px; }

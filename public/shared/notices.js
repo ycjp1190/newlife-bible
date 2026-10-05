@@ -68,6 +68,12 @@ export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
   {
+    id: 6,
+    date: "2026-10-05",
+    title: "새 모임원 환영 인사",
+    items: ["새로운 분이 들어오면 대화방에 환영 인사가 올라가고 알림이 와요. 공감으로 반갑게 맞아 주세요 👋"],
+  },
+  {
     id: 5,
     date: "2026-10-05",
     title: "중간에 들어와도 같이 읽어요",

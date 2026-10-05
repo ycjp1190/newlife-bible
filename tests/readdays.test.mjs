@@ -169,7 +169,7 @@ test("모임 모드: 읽는 요일은 모두 공통, 소식 확인은 사람마�
   assert.equal(me.missedDays, 10);
   // 쉬는 날에 다음 분량을 다 읽어도 '오늘 완료' 소식은 없음
   for (const c of [28, 29, 30]) await go("/check", { method: "POST", token: a, body: { day: 11, chapter: `누가복음 ${c}`, checked: true } });
-  assert.equal((await go("/chat", { token: a })).data.messages.length, 0);
+  assert.equal((await go("/chat", { token: a })).data.messages.filter((m) => m.kind === "done").length, 0);
   // 시작일을 바꾸면 요일 구간 기록은 비우고 지금 요일로
   await go("/settings", { method: "PUT", token: a, body: { start_date: addDays(today, 2) } });
   assert.deepEqual((await go("/state", { token: b })).data.sched, [{ date: addDays(today, 2), day: 1, mask: 127 - todayBit }]);

@@ -408,7 +408,7 @@ async function handleApi(request, env, url, ctx) {
   }
 
   if (path === "/join" && method === "POST") {
-    return isPersonal(env) ? joinPersonal(request, env) : joinGroup(request, env);
+    return isPersonal(env) ? joinPersonal(request, env) : joinGroup(request, env, ctx);
   }
 
   // 개인 모드: 복구 코드로 다른 기기에서 이어 쓰기
@@ -730,10 +730,10 @@ async function attachReactions(env, rows) {
   return rows.map((r) => ({ ...r, deleted: !!r.deleted, reactions: by.get(r.id) || {} }));
 }
 
-// 안 읽은 메시지 수 (다른 사람이 쓴 일반 메시지만. 읽기 완료 소식은 세지 않음)
+// 안 읽은 메시지 수 (다른 사람이 쓴 일반 메시지와 새 모임원 소식. 읽기 완료 소식은 세지 않음)
 async function chatUnread(env, me) {
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM messages WHERE id > ? AND member_id != ? AND kind = 'text' AND deleted_at IS NULL",
+    "SELECT COUNT(*) AS n FROM messages WHERE id > ? AND member_id != ? AND kind IN ('text', 'join') AND deleted_at IS NULL",
   ).bind(me.last_read_msg || 0, me.id).first();
   return row?.n || 0;
 }
@@ -754,6 +754,26 @@ async function postDoneIfToday(env, me, day) {
     "INSERT OR IGNORE INTO messages (member_id, kind, day, body, created_at) VALUES (?, 'done', ?, ?, ?)",
   ).bind(me.id, day, "오늘 말씀을 다 읽었어요 🎉", nowIso()).run();
   return true;
+}
+
+// 새 모임원 환영 인사 (대화방에 'join' 소식으로, 알림도 보냄)
+const WELCOMES = [
+  (n, d) => `${n}님이 모임에 함께하게 되었어요! 🎉 ${d} 같이 읽어요. 반갑게 맞아 주세요 🙏`,
+  (n, d) => `새 식구 ${n}님을 환영해요! 👋 ${d} 말씀 여정을 함께 걸어요 📖`,
+  (n, d) => `${n}님, 말씀 읽고 새 인생에 오신 걸 환영해요! 🌱 ${d} 한 장 한 장 함께 읽어요`,
+];
+async function welcomeMember(env, me, joinDay, started) {
+  const when = started ? `DAY ${joinDay}부터` : "시작일부터";
+  const text = WELCOMES[me.id % WELCOMES.length](me.name, when);
+  await env.DB.prepare("INSERT INTO messages (member_id, kind, body, created_at) VALUES (?, 'join', ?, ?)")
+    .bind(me.id, text, nowIso()).run();
+  const { results } = await env.DB.prepare(
+    `SELECT m.id FROM members m WHERE m.id != ? AND m.chat_push = 1
+     AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id)`,
+  ).bind(me.id).all();
+  for (const m of results) {
+    await pushToMember(env, m.id, { title: "👋 새 모임원", body: `${me.name}님이 들어왔어요. 환영해 주세요!`, url: "/?tab=chat", tag: "chat" }).catch(() => {});
+  }
 }
 
 async function notifyChat(env, me, text) {
@@ -848,7 +868,7 @@ async function handleChat(request, env, ctx, me, path, method, url) {
 }
 
 // 모임 모드 입장 (초대 코드 + 이름). 같은 이름이 있으면 그 사람으로 이어서 사용
-async function joinGroup(request, env) {
+async function joinGroup(request, env, ctx) {
   const { name, invite } = await readBody(request);
   if (!env.INVITE_CODE || String(invite || "").trim() !== env.INVITE_CODE) {
     throw new HttpError(403, "초대 코드가 맞지 않아요.");
@@ -862,6 +882,8 @@ async function joinGroup(request, env) {
     await env.DB.prepare("INSERT INTO members (name, token, created_at, notice_seen, join_day) VALUES (?, ?, ?, ?, ?)")
       .bind(n, newToken(), nowIso(), latestNotice(false), joinDay).run(); // 새 사람은 지난 소식 표시 없이
     me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
+    const job = welcomeMember(env, me, joinDay, !!sched).then(() => signalChat(env, ctx)).catch((e) => console.error("welcome", e));
+    if (ctx?.waitUntil) ctx.waitUntil(job); else await job;
   }
   return json({ token: me.token, member: publicMember(me) });
 }

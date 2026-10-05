@@ -29,11 +29,12 @@ test("대화: 보내기·불러오기·안 읽은 수·공감·지우기", async
   assert.equal(m1.body, "안녕하세요\n오늘도 화이팅");
   await call("/api/chat", { method: "POST", token: a, body: { body: "두 번째" } });
 
-  // 나에게는 안 읽은 2개, 보낸 가에게는 0개
-  assert.equal((await call("/api/state", { token: b })).data.chatUnread, 2);
+  // 나에게는 안 읽은 3개(가의 환영 인사 + 메시지 2), 메시지를 보낸 가는 그때까지 읽은 것으로 0개
+  assert.equal((await call("/api/state", { token: b })).data.chatUnread, 3);
   assert.equal((await call("/api/state", { token: a })).data.chatUnread, 0);
   const list = (await call("/api/chat", { token: b })).data.messages;
-  assert.deepEqual(list.map((m) => m.body), ["안녕하세요\n오늘도 화이팅", "두 번째"]);
+  assert.deepEqual(list.map((m) => m.kind), ["join", "join", "text", "text"]);
+  assert.deepEqual(list.filter((m) => m.kind === "text").map((m) => m.body), ["안녕하세요\n오늘도 화이팅", "두 번째"]);
   await call("/api/chat/read", { method: "POST", token: b, body: { id: list.at(-1).id } });
   assert.equal((await call("/api/state", { token: b })).data.chatUnread, 0);
 
@@ -50,7 +51,7 @@ test("대화: 보내기·불러오기·안 읽은 수·공감·지우기", async
   // 남의 메시지는 못 지우고, 내 메시지는 지우면 내용이 비워진다
   assert.equal((await call(`/api/chat/${m1.id}`, { method: "DELETE", token: b })).status, 403);
   assert.equal((await call(`/api/chat/${m1.id}`, { method: "DELETE", token: a })).status, 200);
-  const after = (await call("/api/chat", { token: b })).data.messages[0];
+  const after = (await call("/api/chat", { token: b })).data.messages.find((m) => m.id === m1.id);
   assert.equal(after.deleted, true);
   assert.equal(after.body, "");
 });
@@ -63,17 +64,18 @@ test("대화: 오늘 분량을 다 읽으면 완료 소식 (하루 한 번, 지�
   const check = (day, c, checked = true) => call("/api/check", { method: "POST", token: a, body: { day, chapter: `누가복음 ${c}`, checked } });
   for (const c of [1, 2, 3]) await check(1, c); // 어제 분량 → 소식 없음
   for (const c of [4, 5]) await check(2, c);
-  assert.equal((await call("/api/chat", { token: a })).data.messages.length, 0); // 아직 다 안 읽음
+  const done = async () => (await call("/api/chat", { token: a })).data.messages.filter((m) => m.kind === "done");
+  assert.equal((await done()).length, 0); // 아직 다 안 읽음
   await check(2, 6);
   await check(2, 6, false);
   await check(2, 6); // 풀었다 다시 체크해도 한 번만
-  const msgs = (await call("/api/chat", { token: a })).data.messages;
+  const msgs = await done();
   assert.equal(msgs.length, 1);
   assert.equal(msgs[0].kind, "done");
   assert.equal(msgs[0].day, 2);
-  // 완료 소식은 안 읽은 수에 세지 않는다
+  // 완료 소식은 안 읽은 수에 세지 않는다 (가의 환영 인사 1개만)
   const b = await join(call, "나");
-  assert.equal((await call("/api/state", { token: b })).data.chatUnread, 0);
+  assert.equal((await call("/api/state", { token: b })).data.chatUnread, 1);
 });
 
 test("대화 알림 켜기·끄기 (기본 켜짐)", async () => {
@@ -133,4 +135,19 @@ test("대화 실시간 연결: 토큰 없으면 401, 개인 모드 404", async (
   assert.equal((await call(`/api/chat/ws?token=${a}`)).status, 404); // 검사 환경엔 실시간 대화방이 없음
   const p = makeApp("personal");
   assert.equal((await p("/api/chat/ws?token=x")).status, 404);
+});
+
+test("새 모임원: 대화방에 환영 인사 (처음 한 번, 다시 입장하면 없음)", async () => {
+  const call = makeApp();
+  const a = await join(call, "가");
+  const yesterday = new Date(Date.parse(kstToday() + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
+  await call("/api/settings", { method: "PUT", token: a, body: { start_date: yesterday } }); // 오늘 = DAY 2
+  await join(call, "새식구");
+  await join(call, "새식구"); // 다시 입장
+  const joins = (await call("/api/chat", { token: a })).data.messages.filter((m) => m.kind === "join");
+  assert.equal(joins.length, 2); // 가(시작 전) + 새식구
+  assert.match(joins[0].body, /가님|시작일부터/);
+  assert.match(joins[1].body, /새식구/);
+  assert.match(joins[1].body, /DAY 2부터/);
+  assert.equal(joins[1].name, "새식구");
 });
