@@ -473,6 +473,7 @@ async function handleApi(request, env, url, ctx) {
     } else {
       await env.DB.prepare("DELETE FROM checks WHERE member_id = ? AND day = ? AND chapter = ?")
         .bind(me.id, day, chapter).run();
+      if (await removeDone(env, me, day)) signalChat(env, ctx);
     }
     return json({ ok: true });
   }
@@ -753,6 +754,17 @@ async function postDoneIfToday(env, me, day) {
   await env.DB.prepare(
     "INSERT OR IGNORE INTO messages (member_id, kind, day, body, created_at) VALUES (?, 'done', ?, ?, ?)",
   ).bind(me.id, day, "오늘 말씀을 다 읽었어요 🎉", nowIso()).run();
+  return true;
+}
+
+// 체크를 풀어 그날 분량이 다시 덜 읽은 상태가 되면 그날 '읽기 완료' 소식(과 공감)을 지운다 (다시 다 읽으면 다시 올라감)
+async function removeDone(env, me, day) {
+  const msg = await env.DB.prepare("SELECT id FROM messages WHERE member_id = ? AND kind = 'done' AND day = ?").bind(me.id, day).first();
+  if (!msg) return false;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM reactions WHERE message_id = ?").bind(msg.id),
+    env.DB.prepare("DELETE FROM messages WHERE id = ?").bind(msg.id),
+  ]);
   return true;
 }
 

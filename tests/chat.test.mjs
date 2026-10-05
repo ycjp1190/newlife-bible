@@ -73,6 +73,11 @@ test("대화: 오늘 분량을 다 읽으면 완료 소식 (하루 한 번, 지�
   assert.equal(msgs.length, 1);
   assert.equal(msgs[0].kind, "done");
   assert.equal(msgs[0].day, 2);
+  // 체크를 풀면 완료 소식이 지워지고, 다시 다 체크하면 다시 올라간다
+  await check(2, 5, false);
+  assert.equal((await done()).length, 0);
+  await check(2, 5);
+  assert.equal((await done()).length, 1);
   // 완료 소식은 안 읽은 수에 세지 않는다 (가의 환영 인사 1개만)
   const b = await join(call, "나");
   assert.equal((await call("/api/state", { token: b })).data.chatUnread, 1);

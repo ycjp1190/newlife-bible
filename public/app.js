@@ -800,6 +800,10 @@ async function pollChat() {
       const i = c.msgs.findIndex((m) => m.id === u.id);
       if (i >= 0 && JSON.stringify(c.msgs[i]) !== JSON.stringify(u)) { c.msgs[i] = u; changed = true; }
     }
+    // 서버에서 사라진 소식(체크를 풀어 지워진 '읽기 완료' 등)은 화면에서도 뺀다
+    const alive = new Set(updates.map((u) => u.id));
+    const kept = c.msgs.filter((m) => alive.has(m.id) || m.id > last);
+    if (kept.length !== c.msgs.length) { c.msgs = kept; changed = true; }
     const fresh = messages.filter((m) => !c.msgs.some((x) => x.id === m.id));
     c.msgs.push(...fresh);
     if (changed && S.tab === "chat") updateChatList();
