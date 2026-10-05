@@ -336,3 +336,5 @@ nav.tabs button { position: relative; }
 /* 오늘 탭: 미리 읽은 곳 */
 .ahead { display: block; width: 100%; margin: 12px 0 0; padding: 12px 16px; border: 1px dashed var(--accent); border-radius: 14px; background: none; color: var(--ink); text-align: left; font-size: 14.5px; line-height: 1.5; }
 .ahead small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
+/* 문장 속 글자 버튼 */
+.link-btn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; }

@@ -71,3 +71,37 @@ test("개인 모드에는 다른 사람 보기가 없다", async () => {
   const t = (await call("/api/join", { method: "POST", body: { name: "혼자", start_date: "2026-10-01" } })).data;
   assert.equal((await call(`/api/members/${t.member.id}`, { token: t.token })).status, 404);
 });
+
+test("중도 참여: 들어온 날의 DAY 부터 밀린 장으로 센다 (그 전은 빠짐)", async () => {
+  const { kstToday } = await import("../public/shared/bible.js");
+  const DB = createLocalDB({ mode: "group" });
+  const env = { DB, ASSETS: { fetch: () => new Response("") }, INVITE_CODE: "test" };
+  const go = async (path, { method = "GET", body, token } = {}) => {
+    const res = await worker.fetch(new Request("https://g.test/api" + path, {
+      method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    }), env, { waitUntil() {} });
+    return { status: res.status, data: await res.json().catch(() => null) };
+  };
+  const join = async (name) => (await go("/join", { method: "POST", body: { name, invite: "test" } })).data;
+  const first = await join("처음");
+  const start = new Date(Date.parse(kstToday() + "T00:00:00Z") - 9 * 86400000).toISOString().slice(0, 10); // 오늘 = DAY 10
+  await go("/settings", { method: "PUT", token: first.token, body: { start_date: start } });
+  const late = await join("늦게");
+  assert.equal(first.member.joinDay, 1);
+  assert.equal(late.member.joinDay, 10);
+  const list = (await go("/members", { token: first.token })).data.members;
+  assert.equal(list.find((m) => m.name === "처음").missedDays, 9);
+  const l = list.find((m) => m.name === "늦게");
+  assert.equal(l.missedDays, 0);
+  assert.equal(l.joinDay, 10);
+  const detail = (await go(`/members/${late.member.id}`, { token: first.token })).data;
+  assert.equal(detail.missedChapters, 0);
+  // 다시 같은 이름으로 들어와도 참여 DAY 는 그대로
+  assert.equal((await join("늦게")).member.joinDay, 10);
+  // 내일이 되면 DAY 10 을 안 읽은 것은 밀린 장
+  const { progress } = await import("../worker/logic.js");
+  const plan = (await go("/state", { token: late.token })).data.plan;
+  const tomorrow = new Date(Date.parse(kstToday() + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
+  assert.deepEqual(progress(plan, start, tomorrow, new Map(), 10).missed, [10]);
+});

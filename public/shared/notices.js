@@ -68,6 +68,16 @@ export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
   {
+    id: 5,
+    date: "2026-10-05",
+    title: "중간에 들어와도 같이 읽어요",
+    items: [
+      "모임 중간에 들어온 분은 들어온 날의 DAY부터 모두와 같이 읽어요",
+      "들어오기 전 분량은 밀린 장·벌금에 들어가지 않고, 원하면 일정 탭에서 따로 읽을 수 있어요",
+      "함께 탭에 'DAY ○부터 참여'로 표시돼요",
+    ],
+  },
+  {
     id: 4,
     date: "2026-10-04",
     title: "공감 이모티콘 추가",

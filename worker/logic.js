@@ -9,7 +9,8 @@ const toMinutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3,
 // plan: [{day, chapters}] (day 오름차순), checked: Map<day, Set<chapterKey>>
 // sched: 시작일 문자열(매일 읽기) 또는 읽는 요일 일정 [{date, day, mask}] (개인 모드)
 // 쉬는 요일이면 todayDay 는 다음에 읽을 DAY, rest: true
-export function progress(plan, sched, today, checked) {
+// fromDay: 모임 중도 참여자는 이 DAY 부터만 밀린 날로 센다 (그 전은 선택)
+export function progress(plan, sched, today, checked, fromDay = 1) {
   const total = plan.length;
   const on = sched ? dayOnDate(sched, today) : null;
   const todayDay = on ? on.day : null;
@@ -20,7 +21,7 @@ export function progress(plan, sched, today, checked) {
   for (const d of plan) {
     const ok = done(d);
     if (ok) doneDays++;
-    else if (todayDay !== null && d.day < todayDay) {
+    else if (todayDay !== null && d.day < todayDay && d.day >= fromDay) {
       missed.push(d.day);
       const set = checked.get(d.day) || new Set();
       missedDetail.push({ day: d.day, remaining: d.chapters.filter((c) => !set.has(chapterKey(c))) });

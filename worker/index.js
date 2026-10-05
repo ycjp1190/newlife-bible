@@ -361,6 +361,7 @@ const publicMember = (m) => ({
   morning_on: !!m.morning_on, lunch_on: !!m.lunch_on, evening_on: !!m.evening_on,
   ...(m.recovery_code ? { recoveryCode: m.recovery_code } : {}),
   ...(m.chat_push !== undefined ? { chat_push: !!m.chat_push } : {}),
+  ...(m.join_day !== undefined ? { joinDay: m.join_day } : {}),
 });
 
 async function readBody(request) {
@@ -486,15 +487,15 @@ async function handleApi(request, env, url, ctx) {
   if (path === "/members" && method === "GET" && !isPersonal(env)) {
     const [plan, { sched }, checks, { results: members }] = await Promise.all([
       loadPlan(env, me), getSchedule(env, me), loadChecks(env),
-      env.DB.prepare("SELECT id, name, last_seen_at FROM members ORDER BY name").all(),
+      env.DB.prepare("SELECT id, name, last_seen_at, join_day FROM members ORDER BY name").all(),
     ]);
     const today = kstToday();
     return json({
       members: members.map((m) => {
-        const p = progress(plan, sched, today, checks.get(m.id) || new Map());
+        const p = progress(plan, sched, today, checks.get(m.id) || new Map(), m.join_day);
         const thisMonth = sched ? missedByMonth(p.missedDetail, sched).find((x) => x.month === today.slice(0, 7)) : null;
         return {
-          id: m.id, name: m.name, lastSeenAt: m.last_seen_at,
+          id: m.id, name: m.name, lastSeenAt: m.last_seen_at, joinDay: m.join_day,
           doneDays: p.doneDays, total: p.total, missedDays: p.missed.length,
           missedChapters: p.missedChapters, thisMonth: thisMonth || { chapters: 0, days: 0 },
           todayDone: p.todayDone, streak: p.streak,
@@ -558,12 +559,12 @@ async function handleApi(request, env, url, ctx) {
   const memberMatch = path.match(/^\/members\/(\d+)$/);
   if (memberMatch && method === "GET" && !isPersonal(env)) {
     const id = Number(memberMatch[1]);
-    const m = await env.DB.prepare("SELECT id, name FROM members WHERE id = ?").bind(id).first();
+    const m = await env.DB.prepare("SELECT id, name, join_day FROM members WHERE id = ?").bind(id).first();
     if (!m) throw new HttpError(404, "그런 사람이 없어요.");
     const [plan, { sched }, checks] = await Promise.all([loadPlan(env, me), getSchedule(env, me), loadChecks(env, id)]);
-    const p = progress(plan, sched, kstToday(), checks.get(id) || new Map());
+    const p = progress(plan, sched, kstToday(), checks.get(id) || new Map(), m.join_day);
     return json({
-      id: m.id, name: m.name, doneDays: p.doneDays, total: p.total, streak: p.streak,
+      id: m.id, name: m.name, joinDay: m.join_day, doneDays: p.doneDays, total: p.total, streak: p.streak,
       missedDays: p.missed.length, missedChapters: p.missedChapters,
       months: sched ? missedByMonth(p.missedDetail, sched) : [],
       missed: p.missedDetail.map((x) => ({ ...x, date: dateOfDaySched(sched, x.day) })).reverse(),
@@ -855,8 +856,11 @@ async function joinGroup(request, env) {
   const n = cleanName(name);
   let me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
   if (!me) {
-    await env.DB.prepare("INSERT INTO members (name, token, created_at, notice_seen) VALUES (?, ?, ?, ?)")
-      .bind(n, newToken(), nowIso(), latestNotice(false)).run(); // 새 사람은 지난 소식 표시 없이
+    // 모임이 이미 시작했으면 오늘 DAY 부터 참여 (그 전 날은 밀린 장·벌금에서 빠짐)
+    const { sched } = await getSchedule(env, null);
+    const joinDay = sched ? Math.max(1, dayOnDate(sched, kstToday()).day) : 1;
+    await env.DB.prepare("INSERT INTO members (name, token, created_at, notice_seen, join_day) VALUES (?, ?, ?, ?, ?)")
+      .bind(n, newToken(), nowIso(), latestNotice(false), joinDay).run(); // 새 사람은 지난 소식 표시 없이
     me = await env.DB.prepare("SELECT * FROM members WHERE name = ?").bind(n).first();
   }
   return json({ token: me.token, member: publicMember(me) });
@@ -971,7 +975,7 @@ async function runNotifications(env, now) {
     const plan = shared ? shared.plan : await loadPlan(env, m);
     const sched = shared ? shared.sched : memberSched(m);
     if (!sched) continue;
-    const prog = progress(plan, sched, today, checks.get(m.id) || new Map());
+    const prog = progress(plan, sched, today, checks.get(m.id) || new Map(), m.join_day ?? 1);
     // 여러 칸이 한꺼번에 밀렸으면 가장 최근 칸 하나만 보낸다
     const slot = slots[slots.length - 1];
     const msg = buildMessage(slot, prog);

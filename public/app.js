@@ -92,12 +92,20 @@ const dayPlan = (day) => S.plan[day - 1];
 const checkedSet = (day) => S.checks.get(day) || new Set();
 const dayDone = (day) => isDayDone(dayPlan(day).chapters, checkedSet(day));
 const streak = () => streakDays(todayDay(), total(), (d) => dayDone(d));
+// 모임 중도 참여자: 이 DAY 부터 모임과 같이 읽음 (그 전 날은 밀린 읽기가 아니라 '참여 전 분량', 선택)
+const joinDay = () => (personal() ? 1 : S.me?.joinDay || 1);
 function missedDays() {
   const t = todayDay();
   if (!t) return [];
   const out = [];
-  for (let d = 1; d < Math.min(t, total() + 1); d++) if (!dayDone(d)) out.push(d);
+  for (let d = joinDay(); d < Math.min(t, total() + 1); d++) if (!dayDone(d)) out.push(d);
   return out;
+}
+// 참여 전 분량 중 아직 안 읽은 날 수
+function beforeJoinLeft() {
+  let n = 0;
+  for (let d = 1; d < Math.min(joinDay(), total() + 1); d++) if (!dayDone(d)) n++;
+  return n;
 }
 const partLabel = (chapters) => sectionLabel(S.roadmap, chapters);
 const monthDay = (iso) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`;
@@ -546,6 +554,7 @@ function renderToday() {
     ${main}
     ${aheadHtml()}
     ${missedHtml}
+    ${beforeJoinLeft() ? `<p class="hint mt">DAY ${joinDay()}부터 모임에 참여했어요. 그 전 분량 ${beforeJoinLeft()}일은 밀린 읽기에 들어가지 않아요. 원하면 <button class="link-btn" data-action="tab" data-tab="plan">일정 탭</button>에서 따로 읽을 수 있어요.</p>` : ""}
     ${navHtml()}`;
 }
 
@@ -578,7 +587,7 @@ function dayRowHtml(day) {
   const done = dayDone(day);
   const set = checkedSet(day);
   const partial = d.chapters.filter((c) => set.has(chapterKey(c))).length;
-  const isMissed = !done && t && day < t;
+  const isMissed = !done && t && day < t && day >= joinDay();
   const mark = done ? "✓" : partial ? `${partial}/${d.chapters.length}` : isMissed ? "•" : "";
   const date = S.startDate ? niceDate(dateOf(day)) : "";
   return `<li><button class="row ${day === t ? "is-today" : ""} ${isMissed ? "missed" : ""}" data-action="open-day" data-day="${day}" id="day-${day}">
@@ -612,10 +621,11 @@ function renderTogether() {
       const fire = m.streak >= 2 ? ` <span class="chip fire">🔥 ${m.streak}일</span>` : "";
       const missed = m.missedDays ? `<span class="chip warn">밀린 ${m.missedChapters}장 · ${m.missedDays}일</span>` : `<span class="chip">밀린 날 없음</span>`;
       const month = m.thisMonth?.chapters ? ` · 이번 달 밀린 ${m.thisMonth.chapters}장` : "";
+      const joined = m.joinDay > 1 ? ` · DAY ${m.joinDay}부터 참여` : "";
       return `<div class="member" role="button" tabindex="0" data-action="member" data-id="${m.id}" aria-label="${esc(m.name)} 자세히 보기">
         <div class="line1"><span class="name">${esc(m.name)}${m.id === S.me.id ? ` <span class="me">(나)</span>` : ""}${fire}</span><span class="chips">${missed} ${today}</span></div>
         <div class="progress" aria-label="진행률 ${pct}%"><i style="width:${bar}%"></i></div>
-        <div class="line2"><span>${m.doneDays} / ${m.total}일 완료${month}</span><span>${pct}% <span class="chev" aria-hidden="true">›</span></span></div>
+        <div class="line2"><span>${m.doneDays} / ${m.total}일 완료${month}${joined}</span><span>${pct}% <span class="chev" aria-hidden="true">›</span></span></div>
       </div>`;
     }).join("");
   }
@@ -651,7 +661,7 @@ async function openMember(id) {
       <span class="mark">${x.remaining.length}장</span></li>`).join("")}</ul>`).join("");
   openSheet(`
     <h3>${esc(d.name)}${d.id === S.me.id ? ` <span class="muted" style="font-size:15px">(나)</span>` : ""}</h3>
-    <p class="muted" style="margin:0 0 12px">${d.streak >= 2 ? `🔥 ${d.streak}일 연속 · ` : ""}${d.doneDays} / ${d.total}일 완료 (${raw.toFixed(2)}%)</p>
+    <p class="muted" style="margin:0 0 12px">${d.streak >= 2 ? `🔥 ${d.streak}일 연속 · ` : ""}${d.doneDays} / ${d.total}일 완료 (${raw.toFixed(2)}%)${d.joinDay > 1 ? ` · DAY ${d.joinDay}부터 참여 (그 전 분량은 밀린 장에서 빠져요)` : ""}</p>
     <div class="mm-stats">
       <div><b>${d.missedChapters}장</b><span>밀린 장</span></div>
       <div><b>${d.missedDays}일</b><span>밀린 날</span></div>
