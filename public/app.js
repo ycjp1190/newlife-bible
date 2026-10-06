@@ -212,12 +212,14 @@ function checksHtml(day) {
       <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button>
       ${video ? `<a class="play" href="${esc(video)}" target="_blank" rel="noopener" aria-label="${esc(itemLabel(c))} 영상 보기">${PLAY_SVG}</a>` : ""}</li>`;
   }).join("")}</ul>
-  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" ${isIOS() ? 'target="_blank" rel="noopener"' : ""} >📖 갓피플성경 앱 열기</a>`;
+  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" ${isIOS() ? 'target="_blank" rel="noopener"' : ""} >${GP_ICON}<span>갓피플성경 앱 열기</span></a>`;
 }
 
 // 갓피플성경 앱 열기 (장 바로 가기 주소는 공개되지 않아 앱만 연다)
 // - 갤럭시: 앱 바로 열기, 없으면 플레이스토어 / 아이폰: 앱스토어 페이지(설치돼 있으면 [열기])
 const GP_PACKAGE = "com.godpeople.GPBIBLE";
+// 갓피플성경 앱 아이콘 느낌 (파란 바탕 + 흰 십자가·'성경')
+const GP_ICON = `<svg class="gp-icon" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#3b6fd4"/><path d="M20 5.5v7M17 8h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><text x="20" y="28.5" text-anchor="middle" font-size="13.5" font-weight="700" fill="#fff" font-family="'Noto Sans KR', sans-serif">성경</text></svg>`;
 const GP_PLAY = `https://play.google.com/store/apps/details?id=${GP_PACKAGE}`;
 const GODPEOPLE_URL = () => (isIOS()
   ? "https://apps.apple.com/kr/app/id511852665"

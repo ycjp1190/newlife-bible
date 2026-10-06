@@ -360,3 +360,6 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .msg-edited { display: block; font-size: 10.5px; color: var(--muted); text-align: right; }
 .msg-actions { display: flex; gap: 8px; margin-top: 14px; }
 .msg-actions .btn { flex: 1; }
+/* 갓피플성경 앱 열기 버튼 */
+.gp-open { gap: 10px; }
+.gp-open .gp-icon { width: 26px; height: 26px; flex: none; }
