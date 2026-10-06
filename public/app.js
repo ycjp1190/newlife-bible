@@ -1003,7 +1003,10 @@ document.addEventListener("pointercancel", lpCancel);
 document.addEventListener("pointermove", (ev) => {
   if (lpStart && Math.hypot(ev.clientX - lpStart.x, ev.clientY - lpStart.y) > 10) lpCancel(); // 스크롤하면 취소
 });
-document.addEventListener("contextmenu", (ev) => { if (ev.target.closest("[data-lp]")) ev.preventDefault(); }); // 폰 기본 메뉴 대신
+// 폰 기본 메뉴(복사·모두 선택…)와 글자 선택 막기: 말풍선 위, 그리고 길게 눌러 창이 뜬 뒤 손을 떼기 전까지 화면 전체
+const lpBlocking = (ev) => ev.target.closest?.("[data-lp], .rx-big, .msg-actions") || Date.now() < lpGuardUntil;
+document.addEventListener("contextmenu", (ev) => { if (lpBlocking(ev)) ev.preventDefault(); });
+document.addEventListener("selectstart", (ev) => { if (lpBlocking(ev)) ev.preventDefault(); });
 // 길게 누른 뒤 손을 뗄 때 생기는 클릭만 무시 (말풍선 위에서만, 잠깐 동안만)
 document.addEventListener("click", (ev) => {
   if (Date.now() < lpGuardUntil || (lpFired && ev.target.closest("[data-lp]"))) { ev.stopPropagation(); ev.preventDefault(); }
