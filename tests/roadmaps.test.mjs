@@ -206,3 +206,14 @@ test("어성경 순서 파일: 절 단위 범위를 장으로, 1,189장 모두",
   // 생성 파일이 원본과 같은지 (원본만 고치고 다시 만들지 않은 경우 잡기)
   assert.deepEqual(buildEoseong(readFileSync(new URL("../data/eoseong-order.txt", import.meta.url), "utf8")), EOSEONG);
 });
+
+test("장별 본문 영상: 1,189장 모두 유튜브 영상 ID", async () => {
+  const { CHAPTER_VIDEOS, chapterVideo } = await import("../public/shared/videos.js");
+  const { BOOKS } = await import("../public/shared/bible.js");
+  for (const [book, { chapters }] of Object.entries(BOOKS)) {
+    assert.equal(CHAPTER_VIDEOS[book].length, chapters, book);
+    for (const id of CHAPTER_VIDEOS[book]) assert.match(id, /^[\w-]{11}$/, book);
+  }
+  assert.equal(chapterVideo(["누가복음", 16]), `https://www.youtube.com/watch?v=${CHAPTER_VIDEOS["누가복음"][15]}`);
+  assert.equal(chapterVideo(["시편", 119, "119:1-24"]), `https://www.youtube.com/watch?v=${CHAPTER_VIDEOS["시편"][118]}`); // 맥체인 절 단위도 그 장 영상
+});

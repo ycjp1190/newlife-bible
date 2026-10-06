@@ -3,6 +3,7 @@ import {
   chapterKey, dateOfDaySched, dayOnDate, EVERY_DAY, formatChapters, isDayDone, itemLabel, kstToday, maskCount,
   MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
+import { chapterVideo } from "./shared/videos.js";
 import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
 import {
@@ -192,6 +193,7 @@ async function disablePush() {
 }
 
 // ── 공통 조각 ─────────────────────────────────────────
+const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 001.5.86l10.5-6.5a1 1 0 000-1.72L9.5 4.64A1 1 0 008 5.5z"/></svg>`;
 const CHECK_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>`;
 
 function checksHtml(day) {
@@ -201,8 +203,11 @@ function checksHtml(day) {
   return `<ul class="checks">${d.chapters.map((c) => {
     const key = chapterKey(c);
     const on = set.has(key);
-    return `<li><button class="check" role="checkbox" aria-checked="${on}" data-action="toggle" data-day="${day}" data-key="${esc(key)}">
-      <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button></li>`;
+    // 장마다 본문 영상 (공동체성경읽기 채널의 장별 영상)
+    const video = chapterVideo(c);
+    return `<li class="check-row"><button class="check" role="checkbox" aria-checked="${on}" data-action="toggle" data-day="${day}" data-key="${esc(key)}">
+      <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button>
+      ${video ? `<a class="play" href="${esc(video)}" target="_blank" rel="noopener" aria-label="${esc(itemLabel(c))} 영상 보기">${PLAY_SVG}</a>` : ""}</li>`;
   }).join("")}</ul>`;
 }
 

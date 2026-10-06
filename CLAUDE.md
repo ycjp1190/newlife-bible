@@ -32,6 +32,7 @@
 | `public/shared/bible.js` | 성경 책·장 수·PART, 범위 글 해석/표기, 한국 시간 날짜 계산 — **화면과 서버가 같이 씀**. 읽기 항목은 `[책, 장]` 또는 `[책, 시작장, 표시이름]`(맥체인 절 단위) |
 | `public/shared/roadmaps.js` | 읽기 로드맵 5가지(flow397 예수님에서 시작 / gospelA 복음서가 문을 여는 / chrono 시간 순서 / community 333 공동체성경읽기 / mcheyne 맥체인)와 읽기표 만들기 `buildPlan`. community·mcheyne는 달력형(1월 1일 기준, 수정 불가) |
 | `public/shared/mcheyne.js` | 맥체인 날짜별 본문 (`scripts/build-mcheyne.mjs`로 생성 — 직접 고치지 않는다) |
+| `public/shared/videos.js` | 장마다 본문 영상(공동체성경읽기 채널 '장별 구절 영상(개역개정)') 유튜브 ID. 원본 `data/chapter-videos.json`(모으기: `python3 scripts/collect-videos.py data/chapter-videos.json`)에서 `scripts/build-videos.mjs`로 생성 — 직접 고치지 않는다 |
 | `public/shared/eoseong.js` | 시간 순서 통독(chrono) = 「어? 성경이 읽어지네!」 읽는 순서(장 단위). 원본 `data/eoseong-order.txt`(교재 120 DAY 목차의 순서, 분량은 쓰지 않음)에서 `scripts/build-eoseong.mjs`로 생성 — 직접 고치지 않는다 |
 | `public/shared/community.js` | 333 공동체성경읽기 365일 본문·유튜브 영상 ID. 원본 `data/community-365.txt`(재생목록 제목 그대로)에서 `scripts/build-community.mjs`로 생성 — 제목 오류 보정은 스크립트의 `FIXES` |
 | `worker/index.js` | 서버 API(`/api/*`)와 예약 알림 실행. 모드별 차이는 `isPersonal(env)`와 `loadPlan`·`getStartDate`·`historyStmt` 등 도우미 함수에 모여 있다 |

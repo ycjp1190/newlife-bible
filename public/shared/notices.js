@@ -4,6 +4,12 @@
 // 확인하지 않은 소식이 있으면 설정 탭에 빨간 점이 뜬다 (members.notice_seen 보다 큰 id).
 export const NOTICES = [
   {
+    id: 8,
+    date: "2026-10-06",
+    title: "장마다 본문 영상",
+    items: ["체크 칸 오른쪽의 ▶ 버튼을 누르면 그 장의 본문 영상(공동체성경읽기 채널, 개역개정)을 볼 수 있어요. 모든 읽기 계획에서 돼요"],
+  },
+  {
     id: 7,
     date: "2026-10-04",
     title: "앱 공유하기",
@@ -67,6 +73,12 @@ export const NOTICES = [
 export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
+  {
+    id: 7,
+    date: "2026-10-06",
+    title: "장마다 본문 영상",
+    items: ["체크 칸 오른쪽의 ▶ 버튼을 누르면 그 장의 본문 영상(공동체성경읽기 채널, 개역개정)을 볼 수 있어요. 모든 읽기 계획에서 돼요"],
+  },
   {
     id: 6,
     date: "2026-10-05",

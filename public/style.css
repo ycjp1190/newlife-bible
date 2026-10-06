@@ -340,3 +340,9 @@ nav.tabs button { position: relative; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; }
 /* 대화: 새 모임원 환영 인사 */
 .chat-join span { background: var(--accent-soft); color: var(--ink); border-radius: 14px; padding: 8px 14px; font-size: 13.5px; line-height: 1.5; max-width: 300px; }
+/* 장마다 본문 영상 버튼 (체크 칸 오른쪽) */
+.check-row { display: flex; gap: 8px; align-items: stretch; }
+.check-row .check { flex: 1; min-width: 0; }
+.play { flex: none; width: 52px; display: grid; place-items: center; border-radius: 14px; border: 1.5px solid var(--line); color: #e0453a; background: transparent; }
+.play svg { width: 20px; height: 20px; }
+.play:active { transform: scale(.97); }
