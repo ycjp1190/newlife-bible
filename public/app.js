@@ -193,7 +193,8 @@ async function disablePush() {
 }
 
 // ── 공통 조각 ─────────────────────────────────────────
-const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 001.5.86l10.5-6.5a1 1 0 000-1.72L9.5 4.64A1 1 0 008 5.5z"/></svg>`;
+// 유튜브처럼 빨간 둥근 사각형 + 흰 삼각형
+const PLAY_SVG = `<svg viewBox="0 0 28 20" aria-hidden="true"><rect x="0" y="0" width="28" height="20" rx="5.5" fill="#ff0033"/><path d="M11.2 5.6v8.8l7.4-4.4z" fill="#fff"/></svg>`;
 const CHECK_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>`;
 
 function checksHtml(day) {
