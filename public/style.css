@@ -346,3 +346,8 @@ nav.tabs button { position: relative; }
 .play { flex: none; width: 56px; display: grid; place-items: center; border-radius: 14px; border: 1.5px solid var(--line); background: transparent; }
 .play svg { width: 30px; height: 22px; display: block; }
 .play:active { transform: scale(.97); }
+/* 의견·제보 */
+.fb-text { height: 140px; min-height: 100px; margin-top: 4px; resize: vertical; font-family: inherit; font-size: 16px; line-height: 1.5; }
+.fb-anon { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 15px; }
+.fb-anon input { width: 20px; height: 20px; }
+.fb-reply { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; font-size: 14.5px; white-space: pre-wrap; }

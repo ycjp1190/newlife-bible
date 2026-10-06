@@ -299,8 +299,9 @@ function sameCode(a, b) {
 }
 
 // 관리자 통계 (개인 모드, ADMIN_CODE 가 설정된 경우만). 운영자 전용이라 실명을 보여 준다.
-function checkAdmin(request, env) {
-  if (!isPersonal(env) || !env.ADMIN_CODE) throw new HttpError(404, "없는 요청이에요.");
+// personalOnly: 사용자 통계·계정 삭제는 개인 모드에서만 (모임 모드 관리자 탭은 의견·제보만)
+function checkAdmin(request, env, personalOnly = false) {
+  if ((personalOnly && !isPersonal(env)) || !env.ADMIN_CODE) throw new HttpError(404, "없는 요청이에요.");
   let given = request.headers.get("X-Admin-Code") || "";
   try { given = decodeURIComponent(given); } catch { /* 그대로 비교 */ }
   if (!sameCode(given, env.ADMIN_CODE)) throw new HttpError(403, "관리자 코드가 맞지 않아요.");
@@ -311,19 +312,19 @@ const testNames = (env) => new Set(String(env.TEST_NAMES || "").split(",").map((
 
 // 관리자: 사용자 한 명과 그 기록을 모두 지운다 (되돌릴 수 없음)
 async function adminDelete(request, env) {
-  checkAdmin(request, env);
+  checkAdmin(request, env, true);
   const { id } = await readBody(request);
   if (!Number.isInteger(id)) throw new HttpError(400, "잘못된 요청이에요.");
   const m = await env.DB.prepare("SELECT id FROM members WHERE id = ?").bind(id).first();
   if (!m) throw new HttpError(404, "그런 사용자가 없어요.");
-  await env.DB.batch(["member_plan", "checks", "history", "push_subscriptions", "sent_log"]
+  await env.DB.batch(["member_plan", "checks", "history", "push_subscriptions", "sent_log", "feedback"]
     .map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE member_id = ?`).bind(id))
     .concat(env.DB.prepare("DELETE FROM members WHERE id = ?").bind(id)));
   return json({ ok: true });
 }
 
 async function adminStats(request, env) {
-  checkAdmin(request, env);
+  checkAdmin(request, env, true);
   const { results } = await env.DB.prepare(
     `SELECT m.id, m.name, m.roadmap, m.per_day, m.start_date, m.created_at, m.last_seen_at, m.app_first_at, m.app_last_at,
        EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id) AS push,
@@ -423,6 +424,9 @@ async function handleApi(request, env, url, ctx) {
   // 관리자 통계 (로그인 대신 관리자 코드)
   if (path === "/admin/stats" && method === "GET") return adminStats(request, env);
   if (path === "/admin/delete" && method === "POST") return adminDelete(request, env);
+  if (path === "/admin/feedback" && method === "GET") return adminFeedbackList(request, env);
+  const fbMatch = path.match(/^\/admin\/feedback\/(\d+)$/);
+  if (fbMatch && method === "POST") return adminFeedbackUpdate(request, env, ctx, Number(fbMatch[1]));
 
   // 대화 실시간 연결 (모임 모드 전용)
   if (path === "/chat/ws") {
@@ -452,6 +456,7 @@ async function handleApi(request, env, url, ctx) {
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
       ...(isPersonal(env) ? {} : { chatUnread: await chatUnread(env, me) }),
+      feedbackReplies: (await env.DB.prepare("SELECT COUNT(*) AS n FROM feedback WHERE member_id = ? AND reply_seen = 0").bind(me.id).first())?.n || 0,
     });
   }
 
@@ -554,6 +559,27 @@ async function handleApi(request, env, url, ctx) {
     if (!Number.isInteger(id) || id < 0 || id > latestNotice(isPersonal(env))) throw new HttpError(400, "잘못된 요청이에요.");
     await env.DB.prepare("UPDATE members SET notice_seen = MAX(notice_seen, ?) WHERE id = ?").bind(id, me.id).run();
     return json({ ok: true });
+  }
+
+  // 의견·제보 보내기 / 내 제보 보기 (답변을 보면 '봤음'으로)
+  if (path === "/feedback" && method === "POST") {
+    const { kind, body, anonymous } = await readBody(request);
+    const text = String(body || "").trim();
+    if (!FEEDBACK_KINDS.includes(kind)) throw new HttpError(400, "종류를 골라 주세요.");
+    if (!text || text.length > 2000) throw new HttpError(400, "내용은 1–2000자로 적어 주세요.");
+    const since = new Date(Date.now() - 86400000).toISOString();
+    const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM feedback WHERE member_id = ? AND created_at >= ?").bind(me.id, since).first();
+    if ((recent?.n || 0) >= 20) throw new HttpError(429, "오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요.");
+    await env.DB.prepare("INSERT INTO feedback (member_id, anonymous, kind, body, created_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(me.id, anonymous ? 1 : 0, kind, text, nowIso()).run();
+    return json({ ok: true });
+  }
+  if (path === "/feedback" && method === "GET") {
+    const { results } = await env.DB.prepare(
+      "SELECT id, anonymous, kind, body, status, reply, replied_at, reply_seen, created_at FROM feedback WHERE member_id = ? ORDER BY id DESC LIMIT 100",
+    ).bind(me.id).all();
+    await env.DB.prepare("UPDATE feedback SET reply_seen = 1 WHERE member_id = ? AND reply_seen = 0").bind(me.id).run();
+    return json({ feedback: results.map(publicFeedback) });
   }
 
   // 함께 읽기: 한 사람의 밀린 장 자세히 (모임 모드 전용, 벌금 정산용)
@@ -766,6 +792,49 @@ async function removeDone(env, me, day) {
     env.DB.prepare("DELETE FROM messages WHERE id = ?").bind(msg.id),
   ]);
   return true;
+}
+
+// ── 의견·제보 ─────────────────────────────────────────
+const FEEDBACK_KINDS = ["bug", "idea", "etc"];
+const FEEDBACK_STATUS = ["new", "seen", "done", "closed"];
+const publicFeedback = (r) => ({
+  id: r.id, anonymous: !!r.anonymous, kind: r.kind, body: r.body, status: r.status,
+  reply: r.reply, repliedAt: r.replied_at, replyNew: r.reply_seen === 0, createdAt: r.created_at,
+});
+
+// 관리자: 전체 제보 (익명이면 이름·사람 번호를 보내지 않음)
+async function adminFeedbackList(request, env) {
+  checkAdmin(request, env);
+  const { results } = await env.DB.prepare(
+    `SELECT f.*, m.name FROM feedback f LEFT JOIN members m ON m.id = f.member_id ORDER BY f.id DESC LIMIT 300`,
+  ).all();
+  return json({
+    newCount: results.filter((r) => r.status === "new").length,
+    feedback: results.map((r) => ({ ...publicFeedback(r), name: r.anonymous ? "익명" : (r.name || "(나간 사람)") })),
+  });
+}
+
+// 관리자: 상태 바꾸기·답변 (답변하면 제보자에게 알림)
+async function adminFeedbackUpdate(request, env, ctx, id) {
+  checkAdmin(request, env);
+  const row = await env.DB.prepare("SELECT * FROM feedback WHERE id = ?").bind(id).first();
+  if (!row) throw new HttpError(404, "그런 제보가 없어요.");
+  const { status, reply } = await readBody(request);
+  if (status !== undefined && !FEEDBACK_STATUS.includes(status)) throw new HttpError(400, "잘못된 상태예요.");
+  const text = reply === undefined ? null : String(reply).trim();
+  if (text !== null && text.length > 2000) throw new HttpError(400, "답변은 2000자까지예요.");
+  const nextStatus = status ?? (row.status === "new" ? "seen" : row.status);
+  if (text) {
+    await env.DB.prepare("UPDATE feedback SET status = ?, reply = ?, replied_at = ?, reply_seen = 0 WHERE id = ?")
+      .bind(nextStatus, text, nowIso(), id).run();
+    const job = pushToMember(env, row.member_id, {
+      title: "💌 제보에 답변이 왔어요", body: text.length > 80 ? text.slice(0, 80) + "…" : text, url: "/?tab=settings", tag: "feedback",
+    }).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(job); else await job;
+  } else {
+    await env.DB.prepare("UPDATE feedback SET status = ? WHERE id = ?").bind(nextStatus, id).run();
+  }
+  return json({ ok: true });
 }
 
 // 새 모임원 환영 인사 (대화방에 'join' 소식으로, 알림도 보냄)

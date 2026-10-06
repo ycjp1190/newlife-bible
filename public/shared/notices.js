@@ -4,6 +4,12 @@
 // 확인하지 않은 소식이 있으면 설정 탭에 빨간 점이 뜬다 (members.notice_seen 보다 큰 id).
 export const NOTICES = [
   {
+    id: 9,
+    date: "2026-10-06",
+    title: "의견 보내기",
+    items: ["설정 → '의견 보내기'에서 불편한 점이나 바라는 점을 보낼 수 있어요. 이름 없이 보낼 수도 있고, 답변이 오면 알림으로 알려 드려요"],
+  },
+  {
     id: 8,
     date: "2026-10-06",
     title: "장마다 본문 영상",
@@ -73,6 +79,12 @@ export const NOTICES = [
 export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
+  {
+    id: 8,
+    date: "2026-10-06",
+    title: "의견 보내기",
+    items: ["설정 → '의견 보내기'에서 불편한 점이나 바라는 점을 보낼 수 있어요. 이름 없이 보낼 수도 있고, 답변이 오면 알림으로 알려 드려요"],
+  },
   {
     id: 7,
     date: "2026-10-06",

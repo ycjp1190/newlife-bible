@@ -126,6 +126,7 @@ async function loadState() {
   S.today = data.today;
   S.vapid = data.vapidPublicKey;
   S.chatUnread = data.chatUnread || 0;
+  S.feedbackReplies = data.feedbackReplies || 0;
   S.checks = new Map(Object.entries(data.checks).map(([d, keys]) => [Number(d), new Set(keys)]));
   S.loaded = true;
 }
@@ -237,7 +238,7 @@ const ICONS = {
 const TAB_NAMES = { today: "오늘", together: "함께", chat: "대화", plan: "일정", settings: "설정", admin: "관리자" };
 const GROUP_ONLY_TABS = ["together", "chat"];
 // 관리자 탭: 개인 모드에서 이 기기에 관리자 코드를 넣었을 때만
-const hasAdmin = () => personal() && !!store.get("adminCode");
+const hasAdmin = () => !!store.get("adminCode"); // 두 앱 모두 (모임용 관리자 탭은 의견·제보만)
 
 function navHtml() {
   const tabs = Object.keys(TAB_NAMES).filter((t) => !(personal() && GROUP_ONLY_TABS.includes(t)) && (t !== "admin" || hasAdmin()));
@@ -245,7 +246,8 @@ function navHtml() {
     if (t === "chat" && S.chatUnread > 0 && S.tab !== "chat") {
       return `<span class="tab-badge" aria-label="안 읽은 메시지 ${S.chatUnread}개">${S.chatUnread > 99 ? "99+" : S.chatUnread}</span>`;
     }
-    if (t === "settings" && unseenNotices()) return `<span class="tab-dot" aria-label="새 소식"></span>`;
+    if (t === "settings" && (unseenNotices() || S.feedbackReplies)) return `<span class="tab-dot" aria-label="새 소식"></span>`;
+    if (t === "admin" && S.admin?.newCount) return `<span class="tab-dot" aria-label="새 제보"></span>`;
     return "";
   };
   return `<nav class="tabs" aria-label="메뉴"><div class="inner" style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map((t) => `
@@ -1000,6 +1002,15 @@ function renderSettings() {
         ${unseenNotices() ? `<span class="chip warn">새 소식 ${unseenNotices()}</span>` : `<span class="mark">›</span>`}</button>
     </div>
 
+    <h2 class="section">의견 보내기</h2>
+    <div class="card">
+      <p style="margin:0 0 12px">불편한 점이나 바라는 점을 알려 주세요. 하나하나 읽고 답변드려요.</p>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn grow" data-action="fb-new">불편·제안 보내기</button>
+        <button class="btn secondary" data-action="fb-mine">내 제보${S.feedbackReplies ? ` <span class="chip warn">답변 ${S.feedbackReplies}</span>` : ""}</button>
+      </div>
+    </div>
+
     <h2 class="section">알림</h2>
     <div class="card">
       <div class="setting-row"><div class="main">이 기기 알림 ${pushState}</div>
@@ -1061,7 +1072,7 @@ function renderSettings() {
     </div>` : ""}
 
     <button class="btn ghost block mt" data-action="sign-out">이 기기에서 나가기</button>
-    ${personal() ? `<p class="center"><button class="admin-link" data-action="${hasAdmin() ? "admin-logout" : "admin-open"}">${hasAdmin() ? "관리자 코드 지우기" : "관리자"}</button></p>` : ""}
+    <p class="center"><button class="admin-link" data-action="${hasAdmin() ? "admin-logout" : "admin-open"}">${hasAdmin() ? "관리자 코드 지우기" : "관리자"}</button></p>
     ${navHtml()}`;
 }
 
@@ -1076,6 +1087,72 @@ function openStartDate() {
       <div class="btn-row"><button class="btn secondary" type="button" data-action="close-sheet">취소</button>
         <button class="btn grow" type="submit">저장${forAll(" (모두에게 적용)")}</button></div>
     </form>`);
+}
+
+// ── 의견·제보 ──
+let fbKind = "bug";
+function openFeedbackForm() {
+  openSheet(`
+    <h3>불편·제안 보내기</h3>
+    <form id="fb-form">
+      <div class="pick-chips">${Object.entries(FB_KIND).map(([k, label]) => `<button class="pchip ${fbKind === k ? "on" : ""}" type="button" data-action="fb-kind" data-kind="${k}">${label}</button>`).join("")}</div>
+      <textarea class="input fb-text" name="body" maxlength="2000" required placeholder="어떤 점이 불편했는지, 어떻게 바뀌면 좋을지 적어 주세요."></textarea>
+      <label class="fb-anon"><input type="checkbox" name="anonymous"> 이름 없이 보내기</label>
+      <p class="hint">익명이어도 답변은 나만 볼 수 있어요 (설정 → 내 제보).</p>
+      <button class="btn block mt" type="submit">보내기</button>
+    </form>`);
+}
+
+async function submitFeedback(form) {
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    await api("/feedback", { method: "POST", body: { kind: fbKind, body: form.body.value, anonymous: form.anonymous.checked } });
+    closeSheet();
+    toast("보냈어요. 답변이 오면 알려 드릴게요 🙏");
+  } catch (e) { toast(e.message); btn.disabled = false; }
+}
+
+async function openMyFeedback() {
+  openSheet(`<h3>내 제보</h3><p class="empty">불러오는 중…</p>`);
+  try {
+    const { feedback } = await api("/feedback");
+    if (!sheetOpen()) return;
+    S.feedbackReplies = 0;
+    openSheet(`<h3>내 제보</h3>
+      ${feedback.length ? feedback.map((f) => `<div class="notice-item">
+        <p class="notice-date">${fbDate(f.createdAt)} · ${FB_KIND[f.kind] || f.kind}${f.anonymous ? " · 익명" : ""} ${fbStatusChip(f.status)}${f.replyNew ? ` <span class="chip warn">NEW</span>` : ""}</p>
+        <p style="margin:6px 0;white-space:pre-wrap">${esc(f.body)}</p>
+        ${f.reply ? `<div class="fb-reply">💬 ${esc(f.reply)}</div>` : ""}
+      </div>`).join("") : `<p class="empty">아직 보낸 제보가 없어요.</p>`}`);
+    const scroll = window.scrollY;
+    render();
+    window.scrollTo(0, scroll);
+  } catch (e) { toast(e.message); }
+}
+
+function openAdminFeedback(id) {
+  const f = S.admin?.fb?.find((x) => x.id === id);
+  if (!f) return;
+  openSheet(`
+    <h3>${esc(f.name)}님의 ${FB_KIND[f.kind] || "의견"}</h3>
+    <p class="muted" style="margin:0 0 8px">${fbDate(f.createdAt)} ${fbStatusChip(f.status)}</p>
+    <p style="margin:0 0 14px;white-space:pre-wrap">${esc(f.body)}</p>
+    <div class="pick-chips">${Object.entries(FB_STATUS).map(([k, [label]]) => `<button class="pchip ${f.status === k ? "on" : ""}" type="button" data-action="fb-status" data-id="${f.id}" data-status="${k}">${label}</button>`).join("")}</div>
+    <form id="fb-reply-form" data-id="${f.id}">
+      <textarea class="input fb-text" name="reply" maxlength="2000" placeholder="답변을 적으면 제보한 분께 알림이 가요.">${esc(f.reply || "")}</textarea>
+      <button class="btn block mt" type="submit">${f.reply ? "답변 고치기" : "답변 보내기"}</button>
+    </form>`);
+}
+
+async function adminFeedbackSave(id, body) {
+  try {
+    const ok = await adminApi(`/feedback/${id}`, undefined, { method: "POST", body });
+    if (!ok) { toast("관리자 코드가 맞지 않아요."); return; }
+    await loadAdmin();
+    openAdminFeedback(id);
+    toast(body.reply ? "답변을 보냈어요." : "상태를 바꿨어요.");
+  } catch (e) { toast(e.message); }
 }
 
 // 내 정보 수정 창 (이름)
@@ -1445,6 +1522,11 @@ document.addEventListener("click", async (ev) => {
   else if (a === "wd-toggle") { S.wdDraft ^= 1 << Number(el.dataset.i); openReadDays(true); }
   else if (a === "read-days-save") saveReadDays(el);
   else if (a === "edit-me") openEditMe();
+  else if (a === "fb-new") openFeedbackForm();
+  else if (a === "fb-kind") { fbKind = el.dataset.kind; document.querySelectorAll('[data-action="fb-kind"]').forEach((b) => b.classList.toggle("on", b.dataset.kind === fbKind)); }
+  else if (a === "fb-mine") openMyFeedback();
+  else if (a === "fb-admin") openAdminFeedback(Number(el.dataset.id));
+  else if (a === "fb-status") adminFeedbackSave(Number(el.dataset.id), { status: el.dataset.status });
   else if (a === "notices") openNotices();
   else if (a === "admin-notices") {
     openSheet(noticesHtml(Number(store.get("adminNoticeSeen") || 0), NOTICES));
@@ -1517,6 +1599,12 @@ document.addEventListener("submit", async (ev) => {
   const f = ev.target;
   ev.preventDefault();
   if (f.id === "admin-form") submitAdminCode(f);
+  else if (f.id === "fb-form") submitFeedback(f);
+  else if (f.id === "fb-reply-form") {
+    const reply = f.reply.value.trim();
+    if (!reply) { toast("답변을 적어 주세요."); return; }
+    adminFeedbackSave(Number(f.dataset.id), { reply });
+  }
   else if (f.id === "chat-form") sendChat(f);
   else if (f.id === "join-form") submitJoin(f);
   else if (f.id === "pick-name-form") {
@@ -1566,16 +1654,27 @@ function agoText(iso) {
   return `${Math.round(min / 60 / 24)}일 전`;
 }
 
-// 관리자 통계 불러오기. 코드가 틀리면 null, 연결이 안 되면 오류
-async function fetchAdmin(code) {
+// 관리자 API (코드가 틀리면 null, 연결이 안 되면 오류)
+async function adminApi(path, code = store.get("adminCode") || "", { method = "GET", body } = {}) {
   let res;
   try {
-    res = await fetch("/api/admin/stats", { headers: { "X-Admin-Code": encodeURIComponent(code) } });
+    res = await fetch("/api/admin" + path, {
+      method, body: body ? JSON.stringify(body) : undefined,
+      headers: { "Content-Type": "application/json", "X-Admin-Code": encodeURIComponent(code) },
+    });
   } catch { throw new Error("인터넷 연결을 확인해 주세요."); }
   const data = await res.json().catch(() => ({}));
   if (res.status === 403 || res.status === 404) return null;
   if (!res.ok) throw new Error(data.error || "문제가 생겼어요.");
   return data;
+}
+
+// 관리자 탭 데이터: 의견·제보(두 앱) + 사용자 통계(개인용만)
+async function fetchAdmin(code) {
+  const fb = await adminApi("/feedback", code);
+  if (!fb) return null;
+  const stats = personal() ? await adminApi("/stats", code) : null;
+  return { fb: fb.feedback, newCount: fb.newCount, stats };
 }
 
 function openAdminLogin(message = "") {
@@ -1620,17 +1719,37 @@ async function loadAdmin() {
       return;
     }
     S.admin = data;
-    if (S.tab === "admin") render();
+    if (S.tab === "admin" || data.newCount) render(); // 새 제보 빨간 점
   } catch (e) { toast(e.message); }
 }
 
+const FB_KIND = { bug: "불편·오류", idea: "개선 제안", etc: "기타" };
+const FB_STATUS = { new: ["접수", "warn"], seen: ["확인함", "gold"], done: ["반영됨", ""], closed: ["보류", "gold"] };
+const fbStatusChip = (st) => `<span class="chip ${FB_STATUS[st]?.[1] || ""}">${FB_STATUS[st]?.[0] || st}</span>`;
+const fbDate = (iso) => niceDate(kstDateOf(iso));
+
+function adminFeedbackHtml() {
+  const list = S.admin.fb || [];
+  return `<h2 class="section">의견·제보 ${S.admin.newCount ? `<small class="chip warn">새 ${S.admin.newCount}</small>` : ""}</h2>
+    <ul class="card list">${list.length ? list.map((f) => `<li><button class="row" data-action="fb-admin" data-id="${f.id}" style="align-items:flex-start">
+      <span class="main"><span class="title" style="white-space:pre-wrap">${esc(f.body.length > 90 ? f.body.slice(0, 90) + "…" : f.body)}</span>
+      <span class="sub">${esc(f.name)} · ${FB_KIND[f.kind] || f.kind} · ${fbDate(f.createdAt)}${f.reply ? " · 💬 답변함" : ""}</span></span>
+      ${fbStatusChip(f.status)}</button></li>`).join("") : `<p class="empty">아직 제보가 없어요.</p>`}</ul>`;
+}
+
 function renderAdmin() {
-  const head = `<header class="top"><h1>관리자 통계</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>`;
+  const head = `<header class="top"><h1>${personal() ? "관리자 통계" : "관리자"}</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>`;
   if (!S.admin) {
     $("#app").innerHTML = `${head}<p class="empty">불러오는 중…</p>${navHtml()}`;
     return;
   }
-  const { summary: sm, users } = S.admin;
+  if (!S.admin.stats) { // 모임용: 의견·제보만
+    $("#app").innerHTML = `${head}${adminFeedbackHtml()}
+      <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>
+      ${navHtml()}`;
+    return;
+  }
+  const { summary: sm, users } = S.admin.stats;
   const stat = (n, label) => `<div><b>${n}</b><span>${label}</span></div>`;
   const rowHtml = (u) => `
     <li class="admin-user ${u.test ? "is-test" : ""}">
@@ -1645,6 +1764,8 @@ function renderAdmin() {
   const testRows = users.filter((u) => u.test).sort(byRecent).map(rowHtml).join("");
   $("#app").innerHTML = `
     ${head}
+    ${adminFeedbackHtml()}
+    <h2 class="section">사용자 통계</h2>
     <button class="btn secondary block" data-action="admin-notices" style="margin-bottom:14px">개인용 업데이트 내용${Number(store.get("adminNoticeSeen") || 0) < LATEST_NOTICE ? ` <span class="chip warn" id="admin-notice-new">새 소식</span>` : ""}</button>
     <div class="admin-stats">
       ${stat(sm.total, "전체 사용자")}
@@ -1690,7 +1811,7 @@ async function start() {
   await detectPush().catch(() => {});
   render();
   if (S.tab === "together") loadMembers();
-  if (S.tab === "admin") loadAdmin();
+  if (hasAdmin()) loadAdmin(); // 관리자 기기: 새 제보가 있으면 관리자 탭에 빨간 점
 }
 
 start();

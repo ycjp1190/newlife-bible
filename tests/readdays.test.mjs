@@ -119,13 +119,14 @@ test("업데이트 소식: 새 사람은 이미 본 것으로, 확인 번호는 
 
 test("기존 개인 DB 에 0003 적용: 매일 읽기 그대로, 소식은 안 본 상태", async () => {
   const DB = createLocalDB({ mode: "personal", migrate: false });
-  const [m1, m2, m3] = personalMigrations();
+  const [m1, m2, m3, ...later] = personalMigrations();
   DB.exec(m1);
   DB.exec(m2);
   await DB.prepare("INSERT INTO members (name, token, recovery_code, start_date, created_at) VALUES ('옛사람', 'tok', 'AAAA-BBBB', '2026-09-30', 'x')").run();
   await DB.prepare("INSERT INTO member_plan (member_id, day, chapters) SELECT 1, day, chapters FROM plan_days").run();
   await DB.prepare("INSERT INTO checks (member_id, plan_version, day, chapter, checked_at) VALUES (1, 0, 1, '누가복음 1', 'x')").run();
   DB.exec(m3);
+  for (const sql of later) DB.exec(sql); // 이후 변경 파일(제보 표 등)
   const call = makeApp(DB);
   const s = (await call("/api/state", { token: "tok" })).data;
   assert.equal(s.readDays, 127);
