@@ -457,6 +457,7 @@ async function handleApi(request, env, url, ctx) {
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
       ...(isPersonal(env) ? {} : { chatUnread: await chatUnread(env, me) }),
       feedbackReplies: (await env.DB.prepare("SELECT COUNT(*) AS n FROM feedback WHERE member_id = ? AND reply_seen = 0").bind(me.id).first())?.n || 0,
+      surveyDone: !!(await env.DB.prepare("SELECT 1 FROM feedback WHERE member_id = ? AND kind = 'survey'").bind(me.id).first()), // 일회용 설문
     });
   }
 
@@ -567,16 +568,19 @@ async function handleApi(request, env, url, ctx) {
     const text = String(body || "").trim();
     if (!FEEDBACK_KINDS.includes(kind)) throw new HttpError(400, "종류를 골라 주세요.");
     if (!text || text.length > 2000) throw new HttpError(400, "내용은 1–2000자로 적어 주세요.");
+    if (kind === "survey" && await env.DB.prepare("SELECT 1 FROM feedback WHERE member_id = ? AND kind = 'survey'").bind(me.id).first()) {
+      throw new HttpError(409, "이미 설문에 답했어요. 고마워요!");
+    }
     const since = new Date(Date.now() - 86400000).toISOString();
     const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM feedback WHERE member_id = ? AND created_at >= ?").bind(me.id, since).first();
     if ((recent?.n || 0) >= 20) throw new HttpError(429, "오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요.");
-    await env.DB.prepare("INSERT INTO feedback (member_id, anonymous, kind, body, created_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(me.id, anonymous ? 1 : 0, kind, text, nowIso()).run();
+    await env.DB.prepare("INSERT INTO feedback (member_id, anonymous, kind, body, status, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(me.id, anonymous ? 1 : 0, kind, text, kind === "survey" ? "seen" : "new", nowIso()).run(); // 설문 답은 '새 제보'로 세지 않음
     return json({ ok: true });
   }
   if (path === "/feedback" && method === "GET") {
     const { results } = await env.DB.prepare(
-      "SELECT id, anonymous, kind, body, status, reply, replied_at, reply_seen, created_at FROM feedback WHERE member_id = ? ORDER BY id DESC LIMIT 100",
+      "SELECT id, anonymous, kind, body, status, reply, replied_at, reply_seen, created_at FROM feedback WHERE member_id = ? AND kind != 'survey' ORDER BY id DESC LIMIT 100",
     ).bind(me.id).all();
     await env.DB.prepare("UPDATE feedback SET reply_seen = 1 WHERE member_id = ? AND reply_seen = 0").bind(me.id).run();
     return json({ feedback: results.map(publicFeedback) });
@@ -795,7 +799,7 @@ async function removeDone(env, me, day) {
 }
 
 // ── 의견·제보 ─────────────────────────────────────────
-const FEEDBACK_KINDS = ["bug", "idea", "etc"];
+const FEEDBACK_KINDS = ["bug", "idea", "etc", "survey"]; // survey: 일회용 설문 답 (한 사람 한 번)
 const FEEDBACK_STATUS = ["new", "seen", "done", "closed"];
 const publicFeedback = (r) => ({
   id: r.id, anonymous: !!r.anonymous, kind: r.kind, body: r.body, status: r.status,

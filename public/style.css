@@ -351,3 +351,5 @@ nav.tabs button { position: relative; }
 .fb-anon { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 15px; }
 .fb-anon input { width: 20px; height: 20px; }
 .fb-reply { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; font-size: 14.5px; white-space: pre-wrap; }
+.hidden { display: none !important; }
+#survey .input { margin-top: 4px; }

@@ -127,6 +127,7 @@ async function loadState() {
   S.vapid = data.vapidPublicKey;
   S.chatUnread = data.chatUnread || 0;
   S.feedbackReplies = data.feedbackReplies || 0;
+  S.surveyDone = data.surveyDone !== false; // 일회용 설문 (예전 서버면 묻지 않음)
   S.checks = new Map(Object.entries(data.checks).map(([d, keys]) => [Number(d), new Set(keys)]));
   S.loaded = true;
 }
@@ -1089,13 +1090,71 @@ function openStartDate() {
     </form>`);
 }
 
+// ── 일회용 설문: 평소 어떤 성경 앱을 쓰는지 (답할 때까지 앱을 열 때마다, 결과를 다 받으면 이 부분을 지운다) ──
+const SURVEY_OPTIONS = ["갓피플성경", "YouVersion 성경", "드라마바이블", "대한성서공회 앱·웹사이트", "웹사이트 검색(네이버 등)", "종이 성경", "기타"];
+let surveyPicked = new Set();
+let lastSurveyPopup = 0;
+function autoSurvey(onStart = false) {
+  if (!S.token || !S.loaded || S.surveyDone) return;
+  if (!onStart && Date.now() - lastSurveyPopup < 30 * 60000) return;
+  if (sheetOpen() && !$("#install-guide")) return; // 다른 창(체크·복구 코드 등)이 열려 있으면 다음에
+  lastSurveyPopup = Date.now();
+  openSurvey();
+}
+
+function openSurvey() {
+  openSheet(`<div id="survey">
+    <h3>잠깐 설문 하나만 🙏</h3>
+    <p class="muted" style="margin:0 0 12px">평소 성경을 어떤 앱·방법으로 읽으세요? (여러 개 고를 수 있어요)</p>
+    <form id="survey-form">
+      <div class="pick-chips">${SURVEY_OPTIONS.map((o) => `<button class="pchip ${surveyPicked.has(o) ? "on" : ""}" type="button" data-action="survey-pick" data-o="${esc(o)}">${esc(o)}</button>`).join("")}</div>
+      <input class="input ${surveyPicked.has("기타") ? "" : "hidden"}" name="other" maxlength="100" placeholder="어떤 앱·방법인지 적어 주세요">
+      <button class="btn block mt" type="submit">보내기</button>
+    </form></div>`);
+}
+
+async function submitSurvey(form) {
+  const other = form.other.value.trim();
+  if (!surveyPicked.size) { toast("하나 이상 골라 주세요."); return; }
+  if (surveyPicked.has("기타") && !other) { toast("기타에 어떤 것인지 적어 주세요."); return; }
+  const body = SURVEY_OPTIONS.filter((o) => surveyPicked.has(o)).map((o) => (o === "기타" ? `기타: ${other}` : o)).join(", ");
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    await api("/feedback", { method: "POST", body: { kind: "survey", body } });
+    S.surveyDone = true;
+    closeSheet();
+    toast("고마워요! 앱을 만드는 데 참고할게요 🙏");
+  } catch (e) {
+    if (/이미/.test(e.message)) { S.surveyDone = true; closeSheet(); }
+    toast(e.message);
+    btn.disabled = false;
+  }
+}
+
+// 관리자: 설문 집계 (의견·제보 목록의 survey 답에서)
+function surveySummaryHtml() {
+  const answers = (S.admin?.fb || []).filter((f) => f.kind === "survey");
+  if (!answers.length) return "";
+  const count = new Map(SURVEY_OPTIONS.map((o) => [o, 0]));
+  const others = [];
+  for (const a of answers) {
+    for (const part of a.body.split(", ")) {
+      if (part.startsWith("기타: ")) { count.set("기타", count.get("기타") + 1); others.push(part.slice(4)); } else if (count.has(part)) count.set(part, count.get(part) + 1);
+    }
+  }
+  return `<h2 class="section">설문: 쓰는 성경 앱 <small>${answers.length}명 응답</small></h2>
+    <div class="card"><p class="mm-months" style="margin:0">${[...count].filter(([, n]) => n).sort((x, y) => y[1] - x[1]).map(([o, n]) => `<span class="chip">${esc(o)} ${n}</span>`).join(" ")}</p>
+    ${others.length ? `<p class="hint">기타: ${others.map(esc).join(" · ")}</p>` : ""}</div>`;
+}
+
 // ── 의견·제보 ──
 let fbKind = "bug";
 function openFeedbackForm() {
   openSheet(`
     <h3>불편·제안 보내기</h3>
     <form id="fb-form">
-      <div class="pick-chips">${Object.entries(FB_KIND).map(([k, label]) => `<button class="pchip ${fbKind === k ? "on" : ""}" type="button" data-action="fb-kind" data-kind="${k}">${label}</button>`).join("")}</div>
+      <div class="pick-chips">${Object.entries(FB_KIND).filter(([k]) => k !== "survey").map(([k, label]) => `<button class="pchip ${fbKind === k ? "on" : ""}" type="button" data-action="fb-kind" data-kind="${k}">${label}</button>`).join("")}</div>
       <textarea class="input fb-text" name="body" maxlength="2000" required placeholder="어떤 점이 불편했는지, 어떻게 바뀌면 좋을지 적어 주세요."></textarea>
       <label class="fb-anon"><input type="checkbox" name="anonymous"> 이름 없이 보내기</label>
       <p class="hint">익명이어도 답변은 나만 볼 수 있어요 (설정 → 내 제보).</p>
@@ -1523,6 +1582,12 @@ document.addEventListener("click", async (ev) => {
   else if (a === "read-days-save") saveReadDays(el);
   else if (a === "edit-me") openEditMe();
   else if (a === "fb-new") openFeedbackForm();
+  else if (a === "survey-pick") {
+    const o = el.dataset.o;
+    surveyPicked.has(o) ? surveyPicked.delete(o) : surveyPicked.add(o);
+    el.classList.toggle("on", surveyPicked.has(o));
+    $("#survey-form [name=other]")?.classList.toggle("hidden", !surveyPicked.has("기타"));
+  }
   else if (a === "fb-kind") { fbKind = el.dataset.kind; document.querySelectorAll('[data-action="fb-kind"]').forEach((b) => b.classList.toggle("on", b.dataset.kind === fbKind)); }
   else if (a === "fb-mine") openMyFeedback();
   else if (a === "fb-admin") openAdminFeedback(Number(el.dataset.id));
@@ -1600,6 +1665,7 @@ document.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if (f.id === "admin-form") submitAdminCode(f);
   else if (f.id === "fb-form") submitFeedback(f);
+  else if (f.id === "survey-form") submitSurvey(f);
   else if (f.id === "fb-reply-form") {
     const reply = f.reply.value.trim();
     if (!reply) { toast("답변을 적어 주세요."); return; }
@@ -1641,7 +1707,7 @@ document.addEventListener("visibilitychange", () => {
     refresh();
     if (S.tab === "together") loadMembers();
   }
-  if (document.visibilityState === "visible") autoInstallGuide(); // 브라우저로 다시 열면 설치 안내 (10분 간격)
+  if (document.visibilityState === "visible") { autoSurvey(); autoInstallGuide(); } // 설문 → 설치 안내 (각각 간격 둠)
 });
 
 // ── 관리자 탭 (개인 모드, 설정 맨 아래 '관리자'에서 코드를 넣은 기기만) ─────────────
@@ -1723,14 +1789,14 @@ async function loadAdmin() {
   } catch (e) { toast(e.message); }
 }
 
-const FB_KIND = { bug: "불편·오류", idea: "개선 제안", etc: "기타" };
+const FB_KIND = { bug: "불편·오류", idea: "개선 제안", etc: "기타", survey: "설문" };
 const FB_STATUS = { new: ["접수", "warn"], seen: ["확인함", "gold"], done: ["반영됨", ""], closed: ["보류", "gold"] };
 const fbStatusChip = (st) => `<span class="chip ${FB_STATUS[st]?.[1] || ""}">${FB_STATUS[st]?.[0] || st}</span>`;
 const fbDate = (iso) => niceDate(kstDateOf(iso));
 
 function adminFeedbackHtml() {
   const list = S.admin.fb || [];
-  return `<h2 class="section">의견·제보 ${S.admin.newCount ? `<small class="chip warn">새 ${S.admin.newCount}</small>` : ""}</h2>
+  return `${surveySummaryHtml()}<h2 class="section">의견·제보 ${S.admin.newCount ? `<small class="chip warn">새 ${S.admin.newCount}</small>` : ""}</h2>
     <ul class="card list">${list.length ? list.map((f) => `<li><button class="row" data-action="fb-admin" data-id="${f.id}" style="align-items:flex-start">
       <span class="main"><span class="title" style="white-space:pre-wrap">${esc(f.body.length > 90 ? f.body.slice(0, 90) + "…" : f.body)}</span>
       <span class="sub">${esc(f.name)} · ${FB_KIND[f.kind] || f.kind} · ${fbDate(f.createdAt)}${f.reply ? " · 💬 답변함" : ""}</span></span>
@@ -1810,6 +1876,7 @@ async function start() {
   }
   await detectPush().catch(() => {});
   render();
+  autoSurvey(true);
   if (S.tab === "together") loadMembers();
   if (hasAdmin()) loadAdmin(); // 관리자 기기: 새 제보가 있으면 관리자 탭에 빨간 점
 }

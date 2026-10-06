@@ -73,3 +73,21 @@ test("기존 DB 에 0004 적용: 데이터 그대로, 제보 표 생김", async 
     assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM feedback").first()).n, 0);
   }
 });
+
+for (const mode of ["group", "personal"]) {
+  test(`일회용 설문 (${mode === "group" ? "모임" : "개인"} 모드)`, async () => {
+    const { call, join } = makeApp(mode);
+    const a = await join("가");
+    assert.equal((await call("/state", { token: a })).data.surveyDone, false);
+    assert.equal((await call("/feedback", { method: "POST", token: a, body: { kind: "survey", body: " " } })).status, 400);
+    assert.equal((await call("/feedback", { method: "POST", token: a, body: { kind: "survey", body: "갓피플성경, 기타: 쉬운성경" } })).status, 200);
+    assert.equal((await call("/state", { token: a })).data.surveyDone, true);
+    assert.equal((await call("/feedback", { method: "POST", token: a, body: { kind: "survey", body: "종이 성경" } })).status, 409);
+    // 설문 답은 '내 제보'와 '새 제보 수'에 들어가지 않고, 관리자 목록에는 보인다
+    assert.equal((await call("/feedback", { token: a })).data.feedback.length, 0);
+    const admin = (await call("/admin/feedback", { admin: "c" })).data;
+    assert.equal(admin.newCount, 0);
+    assert.equal(admin.feedback[0].kind, "survey");
+    assert.equal(admin.feedback[0].body, "갓피플성경, 기타: 쉬운성경");
+  });
+}
