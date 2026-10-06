@@ -977,6 +977,7 @@ async function saveChatEdit(form) {
 // ── 길게 누르기 (카톡처럼: 말풍선을 길게 누르면 공감·복사·수정·삭제) ──
 let lpTimer = null;
 let lpFired = false;
+let lpGuardUntil = 0; // 길게 눌러 창이 뜬 뒤 손을 뗄 때까지(+잠깐) 창 안의 누름을 무시 — 손가락 아래 이모티콘이 눌리지 않게
 let lpStart = null;
 document.addEventListener("pointerdown", (ev) => {
   const el = ev.target.closest("[data-lp]");
@@ -987,6 +988,7 @@ document.addEventListener("pointerdown", (ev) => {
   clearTimeout(lpTimer);
   lpTimer = setTimeout(() => {
     lpFired = true;
+    lpGuardUntil = Infinity;
     el.classList.remove("pressing");
     navigator.vibrate?.(15);
     openChatMessage(Number(el.dataset.lp));
@@ -996,6 +998,7 @@ const lpCancel = () => {
   clearTimeout(lpTimer);
   document.querySelectorAll(".pressing").forEach((e) => e.classList.remove("pressing"));
   if (lpFired) setTimeout(() => { lpFired = false; }, 400);
+  if (lpGuardUntil === Infinity) lpGuardUntil = Date.now() + 350; // 손을 뗀 뒤 잠깐까지
 };
 document.addEventListener("pointerup", lpCancel);
 document.addEventListener("pointercancel", lpCancel);
@@ -1005,7 +1008,7 @@ document.addEventListener("pointermove", (ev) => {
 document.addEventListener("contextmenu", (ev) => { if (ev.target.closest("[data-lp]")) ev.preventDefault(); }); // 폰 기본 메뉴 대신
 // 길게 누른 뒤 손을 뗄 때 생기는 클릭만 무시 (말풍선 위에서만, 잠깐 동안만)
 document.addEventListener("click", (ev) => {
-  if (lpFired && ev.target.closest("[data-lp]")) { ev.stopPropagation(); ev.preventDefault(); }
+  if (Date.now() < lpGuardUntil || (lpFired && ev.target.closest("[data-lp]"))) { ev.stopPropagation(); ev.preventDefault(); }
   lpFired = false;
 }, true);
 
