@@ -212,18 +212,16 @@ function checksHtml(day) {
       <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button>
       ${video ? `<a class="play" href="${esc(video)}" target="_blank" rel="noopener" aria-label="${esc(itemLabel(c))} 영상 보기">${PLAY_SVG}</a>` : ""}</li>`;
   }).join("")}</ul>
-  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" ${isIOS() ? 'target="_blank" rel="noopener"' : ""} >${GP_ICON}<span>갓피플성경 앱 열기</span></a>`;
+  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" target="_blank" rel="noopener" >${GP_ICON}<span>갓피플성경 앱 열기</span></a>`;
 }
 
 // 갓피플성경 앱 열기 (장 바로 가기 주소는 공개되지 않아 앱만 연다)
-// - 갤럭시: 앱 바로 열기, 없으면 플레이스토어 / 아이폰: 앱스토어 페이지(설치돼 있으면 [열기])
+// - 앱을 바로 여는 주소가 공개되지 않아(갤럭시 시험 결과 모두 실패) 스토어 페이지로 연다. 설치돼 있으면 [열기]를 누르면 된다.
 const GP_PACKAGE = "com.godpeople.GPBIBLE";
 // 갓피플성경 앱 아이콘 느낌 (파란 바탕 + 흰 십자가·'성경')
 const GP_ICON = `<svg class="gp-icon" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#3b6fd4"/><path d="M20 5.5v7M17 8h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><text x="20" y="28.5" text-anchor="middle" font-size="13.5" font-weight="700" fill="#fff" font-family="'Noto Sans KR', sans-serif">성경</text></svg>`;
 const GP_PLAY = `https://play.google.com/store/apps/details?id=${GP_PACKAGE}`;
-const GODPEOPLE_URL = () => (isIOS()
-  ? "https://apps.apple.com/kr/app/id511852665"
-  : `intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${GP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(GP_PLAY)};end`);
+const GODPEOPLE_URL = () => (isIOS() ? "https://apps.apple.com/kr/app/id511852665" : GP_PLAY);
 
 function pushNotice() {
   if (S.push === "on" || S.push === "unknown") return "";
@@ -1311,8 +1309,7 @@ function openEditMe() {
 function noticesHtml(seen, list = noticesFor(personal())) {
   return `<h3>업데이트 내용</h3>
     ${list.map((n) => `<div class="notice-item">
-      <p class="notice-date">${esc(n.date)}${n.id > seen ? ` <span class="chip warn">NEW</span>` : ""}</p>
-      <p class="notice-title">${esc(n.title)}</p>
+      <p class="notice-title">${esc(n.title)}${n.id > seen ? ` <span class="chip warn">NEW</span>` : ""}</p>
       <ul class="notice-list">${n.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     </div>`).join("")}`;
 }
