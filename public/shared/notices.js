@@ -4,6 +4,12 @@
 // 확인하지 않은 소식이 있으면 설정 탭에 빨간 점이 뜬다 (members.notice_seen 보다 큰 id).
 export const NOTICES = [
   {
+    id: 10,
+    date: "2026-10-07",
+    title: "갓피플성경 앱 열기",
+    items: ["읽을 곳 아래 [📖 갓피플성경 앱에서 읽기]를 누르면 갓피플성경 앱이 열려요 (그 장으로 바로 가지는 않아요)"],
+  },
+  {
     id: 9,
     date: "2026-10-06",
     title: "의견 보내기",
@@ -79,6 +85,12 @@ export const NOTICES = [
 export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
+  {
+    id: 10,
+    date: "2026-10-07",
+    title: "갓피플성경 앱 열기",
+    items: ["읽을 곳 아래 [📖 갓피플성경 앱에서 읽기]를 누르면 갓피플성경 앱이 열려요 (그 장으로 바로 가지는 않아요)"],
+  },
   {
     id: 9,
     date: "2026-10-07",

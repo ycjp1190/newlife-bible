@@ -353,3 +353,4 @@ nav.tabs button { position: relative; }
 .fb-reply { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; font-size: 14.5px; white-space: pre-wrap; }
 .hidden { display: none !important; }
 #survey .input { margin-top: 4px; }
+a.btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }

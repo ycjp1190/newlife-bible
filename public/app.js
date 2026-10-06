@@ -211,8 +211,17 @@ function checksHtml(day) {
     return `<li class="check-row"><button class="check" role="checkbox" aria-checked="${on}" data-action="toggle" data-day="${day}" data-key="${esc(key)}">
       <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button>
       ${video ? `<a class="play" href="${esc(video)}" target="_blank" rel="noopener" aria-label="${esc(itemLabel(c))} 영상 보기">${PLAY_SVG}</a>` : ""}</li>`;
-  }).join("")}</ul>`;
+  }).join("")}</ul>
+  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" ${isIOS() ? 'target="_blank" rel="noopener"' : ""} data-action="gp-open" data-text="${esc(formatChapters(d.chapters))}">📖 갓피플성경 앱에서 읽기</a>`;
 }
+
+// 갓피플성경 앱 열기 (장 바로 가기 주소는 공개되지 않아 앱만 연다)
+// - 갤럭시: 앱 바로 열기, 없으면 플레이스토어 / 아이폰: 앱스토어 페이지(설치돼 있으면 [열기])
+const GP_PACKAGE = "com.godpeople.GPBIBLE";
+const GP_PLAY = `https://play.google.com/store/apps/details?id=${GP_PACKAGE}`;
+const GODPEOPLE_URL = () => (isIOS()
+  ? "https://apps.apple.com/kr/app/id511852665"
+  : `intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${GP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(GP_PLAY)};end`);
 
 function pushNotice() {
   if (S.push === "on" || S.push === "unknown") return "";
@@ -1600,6 +1609,7 @@ document.addEventListener("click", async (ev) => {
   }
   else if (a === "install-now") installNow();
   else if (a === "share-app") shareApp();
+  else if (a === "gp-open") toast(`갓피플성경에서 ${el.dataset.text}을(를) 펴 주세요 📖`); // 링크는 그대로 열림
   else if (a === "member") openMember(Number(el.dataset.id));
   else if (a === "chat-msg") openChatMessage(Number(el.dataset.id));
   else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);
