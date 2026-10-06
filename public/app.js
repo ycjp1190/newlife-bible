@@ -994,6 +994,11 @@ function renderSettings() {
   }[S.push];
   $("#app").innerHTML = `
     <header class="top"><h1>설정</h1><span class="date">${esc(me.name)}님</span></header>
+    <div class="card">
+      <button class="row notices-row" data-action="notices"><span class="main"><span class="title">업데이트 내용</span>
+        <span class="sub">새로 바뀐 점을 날짜별로 볼 수 있어요</span></span>
+        ${unseenNotices() ? `<span class="chip warn">새 소식 ${unseenNotices()}</span>` : `<span class="mark">›</span>`}</button>
+    </div>
 
     <h2 class="section">알림</h2>
     <div class="card">
@@ -1054,12 +1059,6 @@ function renderSettings() {
       <p style="margin:0 0 12px">폰을 바꿨을 때 기록을 이어 쓰는 코드예요.</p>
       <button class="btn secondary block" data-action="show-code">내 복구 코드 보기</button>
     </div>` : ""}
-
-    <div class="card mt">
-      <button class="row notices-row" data-action="notices"><span class="main"><span class="title">업데이트 내용</span>
-        <span class="sub">새로 바뀐 점을 날짜별로 볼 수 있어요</span></span>
-        ${unseenNotices() ? `<span class="chip warn">새 소식 ${unseenNotices()}</span>` : `<span class="mark">›</span>`}</button>
-    </div>
 
     <button class="btn ghost block mt" data-action="sign-out">이 기기에서 나가기</button>
     ${personal() ? `<p class="center"><button class="admin-link" data-action="${hasAdmin() ? "admin-logout" : "admin-open"}">${hasAdmin() ? "관리자 코드 지우기" : "관리자"}</button></p>` : ""}
