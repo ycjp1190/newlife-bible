@@ -294,8 +294,8 @@ nav.tabs button { position: relative; }
 }
 .chat-input:focus { border-color: var(--accent); }
 .chat-form .btn { border-radius: 18px; min-height: 42px; padding: 8px 16px; }
-.rx-big { display: grid; grid-template-columns: repeat(4, 64px); gap: 12px; justify-content: center; margin: 4px 0 8px; }
-.rx-big button { font-size: 30px; width: 64px; height: 64px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--bg); }
+.rx-big { display: grid; grid-template-columns: repeat(5, 56px); gap: 10px; justify-content: center; margin: 4px 0 8px; }
+.rx-big button { font-size: 27px; width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--bg); }
 .rx-big button.on { border-color: var(--accent); background: var(--accent-soft); }
 .rx-who li { font-size: 14.5px; }
 

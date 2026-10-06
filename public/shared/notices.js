@@ -80,6 +80,12 @@ export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
   {
+    id: 9,
+    date: "2026-10-07",
+    title: "공감에 👌 추가",
+    items: ["대화 공감에 👌(오케이)를 더했어요"],
+  },
+  {
     id: 8,
     date: "2026-10-06",
     title: "의견 보내기",

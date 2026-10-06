@@ -749,7 +749,7 @@ async function handleApi(request, env, url, ctx) {
 }
 
 // ── 대화(단톡방) ───────────────────────────────────────
-const REACTIONS = ["🙏", "❤️", "👍", "👏", "🙌", "😊", "😢", "🔥"]; // 공감 (화면과 서버가 같아야 함)
+const REACTIONS = ["🙏", "❤️", "👍", "👌", "👏", "🙌", "😊", "😢", "🔥"]; // 공감 (화면과 서버가 같아야 함)
 const MSG_COLS = `m.id, m.member_id, mem.name, m.kind, m.day,
   CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at IS NOT NULL AS deleted`;
 
