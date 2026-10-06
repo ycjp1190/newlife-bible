@@ -35,9 +35,10 @@ test("관리자 통계: 코드가 맞아야 보이고, 운영자에게는 실명
   assert.equal(users[1].appFirstAt, null);
 });
 
-test("관리자 통계: 코드가 설정 안 됐거나 모임 모드면 없음", async () => {
+test("관리자 통계: 코드가 설정 안 됐으면 없음, 모임 모드도 코드가 있으면 볼 수 있음", async () => {
   assert.equal((await makeApp({ admin: null })("/api/admin/stats", { headers: { "X-Admin-Code": "x" } })).status, 404);
-  assert.equal((await makeApp({ mode: "group" })("/api/admin/stats", { headers: { "X-Admin-Code": "secret-code" } })).status, 404);
+  assert.equal((await makeApp({ mode: "group", admin: null })("/api/admin/stats", { headers: { "X-Admin-Code": "x" } })).status, 404);
+  assert.equal((await makeApp({ mode: "group" })("/api/admin/stats", { headers: { "X-Admin-Code": "secret-code" } })).status, 200);
 });
 
 test("설치 기록 변경 파일: 기존 개인 DB 에 적용해도 그대로", async () => {

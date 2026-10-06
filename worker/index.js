@@ -280,7 +280,7 @@ async function authMember(request, env) {
   if (!me) throw new HttpError(401, "다시 입장해 주세요.");
   const now = nowIso();
   // 개인 모드: 홈 화면 앱(설치형)으로 열었으면 그 시각도 기록 (관리자 통계용)
-  if (isPersonal(env) && request.headers.get("X-App-Mode") === "standalone") {
+  if (request.headers.get("X-App-Mode") === "standalone") {
     await env.DB.prepare("UPDATE members SET last_seen_at = ?, app_last_at = ?, app_first_at = COALESCE(app_first_at, ?) WHERE id = ?")
       .bind(now, now, now, me.id).run();
   } else {
@@ -323,19 +323,24 @@ async function adminDelete(request, env) {
   return json({ ok: true });
 }
 
+// 사용자 현황 (두 앱). 개인 모드는 계획·로드맵도, 모임 모드는 참여 DAY 도
 async function adminStats(request, env) {
-  checkAdmin(request, env, true);
-  const { results } = await env.DB.prepare(
-    `SELECT m.id, m.name, m.roadmap, m.per_day, m.start_date, m.created_at, m.last_seen_at, m.app_first_at, m.app_last_at,
+  checkAdmin(request, env);
+  const { results } = await env.DB.prepare(isPersonal(env)
+    ? `SELECT m.id, m.name, m.roadmap, m.per_day, m.start_date, m.created_at, m.last_seen_at, m.app_first_at, m.app_last_at,
        EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id) AS push,
        (SELECT COUNT(*) FROM checks c WHERE c.member_id = m.id AND c.plan_version = m.plan_version) AS checked
+     FROM members m ORDER BY m.id`
+    : `SELECT m.id, m.name, m.join_day, m.created_at, m.last_seen_at, m.app_first_at, m.app_last_at,
+       EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.member_id = m.id) AS push,
+       (SELECT COUNT(*) FROM checks c WHERE c.member_id = m.id) AS checked
      FROM members m ORDER BY m.id`,
   ).all();
   const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
   const d1 = ago(1);
   const d7 = ago(7);
   const users = results.map((r) => ({
-    no: r.id, name: r.name, roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date,
+    no: r.id, name: r.name, roadmap: r.roadmap, perDay: r.per_day, startDate: r.start_date, joinDay: r.join_day,
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, appFirstAt: r.app_first_at, appLastAt: r.app_last_at,
     push: !!r.push, checked: r.checked, test: testNames(env).has(String(r.name).trim().toLowerCase()),
   }));
@@ -350,7 +355,7 @@ async function adminStats(request, env) {
       active1: count((u) => u.lastSeenAt && u.lastSeenAt >= d1),
       active7: count((u) => u.lastSeenAt && u.lastSeenAt >= d7),
       push: count((u) => u.push),
-      byRoadmap: Object.fromEntries(Object.keys(ROADMAPS).map((id) => [id, count((u) => u.roadmap === id)])),
+      ...(isPersonal(env) ? { byRoadmap: Object.fromEntries(Object.keys(ROADMAPS).map((id) => [id, count((u) => u.roadmap === id)])) } : {}),
     },
     users,
   });

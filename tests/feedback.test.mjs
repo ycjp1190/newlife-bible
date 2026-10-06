@@ -57,8 +57,11 @@ for (const mode of ["group", "personal"]) {
     // 하루 20건까지
     for (let i = 0; i < 19; i++) await call("/feedback", { method: "POST", token: a, body: { kind: "etc", body: `${i}` } });
     assert.equal((await call("/feedback", { method: "POST", token: a, body: { kind: "etc", body: "21" } })).status, 429);
-    // 사용자 통계는 개인 모드에서만
-    assert.equal((await call("/admin/stats", { admin: "c" })).status, mode === "personal" ? 200 : 404);
+    // 사용자 현황은 두 모드 모두 (계정 삭제는 개인 모드만)
+    const st = (await call("/admin/stats", { admin: "c" })).data;
+    assert.equal(st.summary.total, 2);
+    assert.equal(st.summary.byRoadmap !== undefined, mode === "personal");
+    assert.equal((await call("/admin/delete", { method: "POST", admin: "c", body: { id: 1 } })).status, mode === "personal" ? 200 : 404);
   });
 }
 
@@ -91,3 +94,13 @@ for (const mode of ["group", "personal"]) {
     assert.equal(admin.feedback[0].body, "갓피플성경, 기타: 쉬운성경");
   });
 }
+
+test("모임 모드: 홈 화면 앱으로 열면 앱 사용 기록", async () => {
+  const { call, join, DB } = makeApp("group");
+  const a = await join("가");
+  await worker.fetch(new Request("https://app.test/api/state", { headers: { Authorization: `Bearer ${a}`, "X-App-Mode": "standalone" } }),
+    { DB, ASSETS: { fetch: () => new Response("") }, INVITE_CODE: "test", ADMIN_CODE: "c" }, { waitUntil() {} });
+  const u = (await call("/admin/stats", { admin: "c" })).data.users[0];
+  assert.ok(u.appFirstAt && u.lastSeenAt);
+  assert.equal(u.joinDay, 1);
+});

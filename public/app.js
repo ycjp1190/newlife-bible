@@ -1739,7 +1739,7 @@ async function adminApi(path, code = store.get("adminCode") || "", { method = "G
 async function fetchAdmin(code) {
   const fb = await adminApi("/feedback", code);
   if (!fb) return null;
-  const stats = personal() ? await adminApi("/stats", code) : null;
+  const stats = await adminApi("/stats", code); // 두 앱 모두 사용자 현황
   return { fb: fb.feedback, newCount: fb.newCount, stats };
 }
 
@@ -1804,12 +1804,12 @@ function adminFeedbackHtml() {
 }
 
 function renderAdmin() {
-  const head = `<header class="top"><h1>${personal() ? "관리자 통계" : "관리자"}</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>`;
+  const head = `<header class="top"><h1>관리자</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>`;
   if (!S.admin) {
     $("#app").innerHTML = `${head}<p class="empty">불러오는 중…</p>${navHtml()}`;
     return;
   }
-  if (!S.admin.stats) { // 모임용: 의견·제보만
+  if (!S.admin.stats) { // (예전 서버) 의견·제보만
     $("#app").innerHTML = `${head}${adminFeedbackHtml()}
       <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>
       ${navHtml()}`;
@@ -1821,9 +1821,9 @@ function renderAdmin() {
     <li class="admin-user ${u.test ? "is-test" : ""}">
       <div class="line1"><span class="name">#${u.no} ${esc(u.name)}${u.test ? ` <span class="chip warn">테스트</span>` : ""}</span>
         <span class="chips">${u.appFirstAt ? `<span class="chip">📱 앱</span>` : `<span class="chip gold">🌐 웹만</span>`}${u.push ? ` <span class="chip">🔔</span>` : ""}</span></div>
-      <div class="sub">${esc(ROADMAPS[u.roadmap]?.name || u.roadmap)}${isFixed(u.roadmap) ? "" : ` · 하루 ${u.perDay}장`} · 체크 ${u.checked}장</div>
+      <div class="sub">${personal() ? `${esc(ROADMAPS[u.roadmap]?.name || u.roadmap)}${isFixed(u.roadmap) ? "" : ` · 하루 ${u.perDay}장`} · ` : (u.joinDay > 1 ? `DAY ${u.joinDay}부터 참여 · ` : "")}체크 ${u.checked}장</div>
       <div class="sub">가입 ${u.createdAt ? niceDate(kstDateOf(u.createdAt)) : "-"} · 마지막 접속 ${agoText(u.lastSeenAt)}${u.appLastAt ? ` · 앱으로 ${agoText(u.appLastAt)}` : ""}</div>
-      <button class="btn ghost admin-del" data-action="admin-delete" data-id="${u.no}" data-name="${esc(u.name)}">삭제</button>
+      ${personal() ? `<button class="btn ghost admin-del" data-action="admin-delete" data-id="${u.no}" data-name="${esc(u.name)}">삭제</button>` : ""}
     </li>`;
   const byRecent = (a, b) => (b.lastSeenAt || "").localeCompare(a.lastSeenAt || "");
   const rows = users.filter((u) => !u.test).sort(byRecent).map(rowHtml).join("");
@@ -1832,7 +1832,7 @@ function renderAdmin() {
     ${head}
     ${adminFeedbackHtml()}
     <h2 class="section">사용자 통계</h2>
-    <button class="btn secondary block" data-action="admin-notices" style="margin-bottom:14px">개인용 업데이트 내용${Number(store.get("adminNoticeSeen") || 0) < LATEST_NOTICE ? ` <span class="chip warn" id="admin-notice-new">새 소식</span>` : ""}</button>
+    <button class="btn secondary block ${personal() ? "" : "hidden"}" data-action="admin-notices" style="margin-bottom:14px">개인용 업데이트 내용${Number(store.get("adminNoticeSeen") || 0) < LATEST_NOTICE ? ` <span class="chip warn" id="admin-notice-new">새 소식</span>` : ""}</button>
     <div class="admin-stats">
       ${stat(sm.total, "전체 사용자")}
       ${stat(sm.installed, "앱으로 연 사람")}
@@ -1841,11 +1841,11 @@ function renderAdmin() {
       ${stat(sm.active7, "최근 7일 접속")}
       ${stat(sm.push, "알림 켬")}
     </div>
-    <p class="mm-months mt">${ROADMAP_ORDER.map((id) => `<span class="chip">${esc(ROADMAPS[id].name)} ${sm.byRoadmap[id] || 0}</span>`).join(" ")}</p>
+    ${sm.byRoadmap ? `<p class="mm-months mt">${ROADMAP_ORDER.map((id) => `<span class="chip">${esc(ROADMAPS[id].name)} ${sm.byRoadmap[id] || 0}</span>`).join(" ")}</p>` : ""}
     <h2 class="section">사용자 <small>최근 접속 순</small></h2>
     <ul class="card list admin-list">${rows || `<p class="empty">아직 없어요.</p>`}</ul>
     ${testRows ? `<h2 class="section">테스트 계정 <small>통계에서 빠짐 · ${sm.tests}개</small></h2><ul class="card list admin-list">${testRows}</ul>` : ""}
-    <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (2026년 10월 2일 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
+    <p class="hint">📱 앱 = 홈 화면에 추가한 앱으로 연 적이 있는 사람 (${personal() ? "2026년 10월 2일" : "2026년 10월 6일"} 업데이트 이후 기록부터). 🌐 웹만 = 아직 앱으로 연 기록이 없는 사람.</p>
     <button class="btn ghost block mt" data-action="admin-logout">이 기기에서 관리자 코드 지우기</button>
     ${navHtml()}`;
 }
