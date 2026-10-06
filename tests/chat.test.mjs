@@ -156,3 +156,20 @@ test("새 모임원: 대화방에 환영 인사 (처음 한 번, 다시 입장�
   assert.match(joins[1].body, /DAY 2부터/);
   assert.equal(joins[1].name, "새식구");
 });
+
+test("대화: 내 메시지 고치기 (남의 것·지운 것·소식은 안 됨)", async () => {
+  const call = makeApp();
+  const a = await join(call, "가");
+  const b = await join(call, "나");
+  const m = (await call("/api/chat", { method: "POST", token: a, body: { body: "오타잇음" } })).data.message;
+  assert.equal((await call(`/api/chat/${m.id}`, { method: "PUT", token: b, body: { body: "남이 고침" } })).status, 403);
+  assert.equal((await call(`/api/chat/${m.id}`, { method: "PUT", token: a, body: { body: " " } })).status, 400);
+  assert.equal((await call(`/api/chat/${m.id}`, { method: "PUT", token: a, body: { body: "오타 있음" } })).status, 200);
+  const got = (await call("/api/chat", { token: b })).data.messages.find((x) => x.id === m.id);
+  assert.equal(got.body, "오타 있음");
+  assert.ok(got.edited);
+  const join1 = (await call("/api/chat", { token: a })).data.messages.find((x) => x.kind === "join");
+  assert.equal((await call(`/api/chat/${join1.id}`, { method: "PUT", token: a, body: { body: "x" } })).status, 403);
+  await call(`/api/chat/${m.id}`, { method: "DELETE", token: a });
+  assert.equal((await call(`/api/chat/${m.id}`, { method: "PUT", token: a, body: { body: "다시" } })).status, 403);
+});

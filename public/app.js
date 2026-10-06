@@ -212,7 +212,7 @@ function checksHtml(day) {
       <span class="box">${CHECK_SVG}</span><span class="label">${esc(itemLabel(c))}</span></button>
       ${video ? `<a class="play" href="${esc(video)}" target="_blank" rel="noopener" aria-label="${esc(itemLabel(c))} 영상 보기">${PLAY_SVG}</a>` : ""}</li>`;
   }).join("")}</ul>
-  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" ${isIOS() ? 'target="_blank" rel="noopener"' : ""} data-action="gp-open" data-text="${esc(formatChapters(d.chapters))}">📖 갓피플성경 앱에서 읽기</a>`;
+  <a class="btn secondary block mt gp-open" href="${GODPEOPLE_URL()}" ${isIOS() ? 'target="_blank" rel="noopener"' : ""} >📖 갓피플성경 앱 열기</a>`;
 }
 
 // 갓피플성경 앱 열기 (장 바로 가기 주소는 공개되지 않아 앱만 연다)
@@ -720,12 +720,12 @@ function chatListHtml() {
       prevAuthor = null;
     }
     if (m.kind === "join") { // 새 모임원 환영 인사
-      html += `<div class="chat-done chat-join" data-action="chat-msg" data-id="${m.id}"><span>${esc(m.body)}</span>${reactionsHtml(m)}</div>`;
+      html += `<div class="chat-done chat-join"><span data-lp="${m.id}">${esc(m.body)}</span>${reactionsHtml(m)}</div>`;
       prevAuthor = null;
       continue;
     }
     if (m.kind === "done") {
-      html += `<div class="chat-done" data-action="chat-msg" data-id="${m.id}"><span>🎉 <b>${esc(m.name)}</b>님이 오늘 말씀을 다 읽었어요</span>${reactionsHtml(m)}</div>`;
+      html += `<div class="chat-done"><span data-lp="${m.id}">🎉 <b>${esc(m.name)}</b>님이 오늘 말씀을 다 읽었어요</span>${reactionsHtml(m)}</div>`;
       prevAuthor = null;
       continue;
     }
@@ -733,8 +733,8 @@ function chatListHtml() {
     html += `<div class="msg ${mine ? "mine" : ""}">
       ${!mine && prevAuthor !== m.member_id ? `<div class="msg-name">${esc(m.name)}</div>` : ""}
       <div class="msg-row">
-        <div class="bubble ${m.deleted ? "deleted" : ""}" data-action="chat-msg" data-id="${m.id}">${m.deleted ? "삭제된 메시지예요" : esc(m.body)}</div>
-        <span class="msg-meta">${unreadCount(m) ? `<b class="unread-n" aria-label="안 읽은 사람 ${unreadCount(m)}명">${unreadCount(m)}</b>` : ""}<span class="msg-time">${timeOf(m.created_at)}</span></span>
+        <div class="bubble ${m.deleted ? "deleted" : ""}" ${m.deleted ? "" : `data-lp="${m.id}"`}>${m.deleted ? "삭제된 메시지예요" : esc(m.body)}</div>
+        <span class="msg-meta">${unreadCount(m) ? `<b class="unread-n" aria-label="안 읽은 사람 ${unreadCount(m)}명">${unreadCount(m)}</b>` : ""}${m.edited ? `<span class="msg-edited">수정됨</span>` : ""}<span class="msg-time">${timeOf(m.created_at)}</span></span>
       </div>${reactionsHtml(m)}</div>`;
     prevAuthor = m.member_id;
   }
@@ -937,8 +937,75 @@ function openChatMessage(id) {
     <p class="muted" style="margin:0 0 14px;white-space:pre-wrap">${m.kind === "done" ? `${esc(m.name)}님이 오늘 말씀을 다 읽었어요 🎉` : esc(m.body.length > 120 ? m.body.slice(0, 120) + "…" : m.body)}</p>
     <div class="rx-big">${REACTIONS.map((e) => `<button class="${(m.reactions?.[e] || []).includes(S.me.id) ? "on" : ""}" data-action="chat-react" data-id="${m.id}" data-emoji="${e}" aria-label="${e} 공감">${e}</button>`).join("")}</div>
     ${who ? `<h2 class="section">공감한 사람</h2><ul class="plain rx-who">${who}</ul>` : ""}
-    ${mine && m.kind === "text" ? `<button class="btn danger block mt" data-action="chat-delete" data-id="${m.id}">메시지 지우기</button>` : ""}`);
+    <div class="msg-actions">
+      ${m.kind === "text" ? `<button class="btn secondary" data-action="chat-copy" data-id="${m.id}">복사</button>` : ""}
+      ${mine && m.kind === "text" ? `<button class="btn secondary" data-action="chat-edit" data-id="${m.id}">수정</button>
+        <button class="btn danger" data-action="chat-delete" data-id="${m.id}">삭제</button>` : ""}
+    </div>`);
 }
+
+// 내 메시지 고치기
+function openChatEdit(id) {
+  const m = S.chat.msgs.find((x) => x.id === id);
+  if (!m) return;
+  openSheet(`<h3>메시지 수정</h3>
+    <form id="chat-edit-form" data-id="${id}">
+      <textarea class="input fb-text" name="body" maxlength="1000" required>${esc(m.body)}</textarea>
+      <div class="btn-row"><button class="btn secondary" type="button" data-action="close-sheet">취소</button>
+        <button class="btn grow" type="submit">수정하기</button></div>
+    </form>`);
+  const t = $("#chat-edit-form textarea");
+  t.focus();
+  t.setSelectionRange(t.value.length, t.value.length);
+}
+
+async function saveChatEdit(form) {
+  const id = Number(form.dataset.id);
+  const text = form.body.value.trim();
+  if (!text) { toast("내용을 적어 주세요."); return; }
+  try {
+    await api(`/chat/${id}`, { method: "PUT", body: { body: text } });
+    const m = S.chat.msgs.find((x) => x.id === id);
+    if (m) { m.body = text; m.edited = 1; }
+    closeSheet();
+    updateChatList();
+  } catch (e) { toast(e.message); }
+}
+
+// ── 길게 누르기 (카톡처럼: 말풍선을 길게 누르면 공감·복사·수정·삭제) ──
+let lpTimer = null;
+let lpFired = false;
+let lpStart = null;
+document.addEventListener("pointerdown", (ev) => {
+  const el = ev.target.closest("[data-lp]");
+  if (!el) return;
+  lpFired = false;
+  lpStart = { x: ev.clientX, y: ev.clientY };
+  el.classList.add("pressing");
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => {
+    lpFired = true;
+    el.classList.remove("pressing");
+    navigator.vibrate?.(15);
+    openChatMessage(Number(el.dataset.lp));
+  }, 450);
+});
+const lpCancel = () => {
+  clearTimeout(lpTimer);
+  document.querySelectorAll(".pressing").forEach((e) => e.classList.remove("pressing"));
+  if (lpFired) setTimeout(() => { lpFired = false; }, 400);
+};
+document.addEventListener("pointerup", lpCancel);
+document.addEventListener("pointercancel", lpCancel);
+document.addEventListener("pointermove", (ev) => {
+  if (lpStart && Math.hypot(ev.clientX - lpStart.x, ev.clientY - lpStart.y) > 10) lpCancel(); // 스크롤하면 취소
+});
+document.addEventListener("contextmenu", (ev) => { if (ev.target.closest("[data-lp]")) ev.preventDefault(); }); // 폰 기본 메뉴 대신
+// 길게 누른 뒤 손을 뗄 때 생기는 클릭만 무시 (말풍선 위에서만, 잠깐 동안만)
+document.addEventListener("click", (ev) => {
+  if (lpFired && ev.target.closest("[data-lp]")) { ev.stopPropagation(); ev.preventDefault(); }
+  lpFired = false;
+}, true);
 
 async function reactChat(id, emoji) {
   const m = S.chat.msgs.find((x) => x.id === id);
@@ -1563,6 +1630,7 @@ document.addEventListener("click", async (ev) => {
     render();
     if (S.tab === "together") loadMembers();
     if (S.tab === "admin") loadAdmin();
+    if (S.tab === "chat" && !store.get("lpHint")) { store.set("lpHint", "1"); toast("말풍선을 길게 누르면 공감·복사·수정·삭제를 할 수 있어요"); }
   } else if (a === "toggle-missed") { S.showAllMissed = !S.showAllMissed; render(); }
   else if (a === "open-day") openDay(Number(el.dataset.day));
   else if (a === "close-sheet") closeSheet();
@@ -1609,9 +1677,14 @@ document.addEventListener("click", async (ev) => {
   }
   else if (a === "install-now") installNow();
   else if (a === "share-app") shareApp();
-  else if (a === "gp-open") toast(`갓피플성경에서 ${el.dataset.text}을(를) 펴 주세요 📖`); // 링크는 그대로 열림
   else if (a === "member") openMember(Number(el.dataset.id));
   else if (a === "chat-msg") openChatMessage(Number(el.dataset.id));
+  else if (a === "chat-edit") openChatEdit(Number(el.dataset.id));
+  else if (a === "chat-copy") {
+    const m = S.chat.msgs.find((x) => x.id === Number(el.dataset.id));
+    try { await navigator.clipboard.writeText(m.body); toast("복사했어요."); } catch { toast("복사하지 못했어요."); }
+    closeSheet();
+  }
   else if (a === "chat-react") reactChat(Number(el.dataset.id), el.dataset.emoji);
   else if (a === "chat-delete") deleteChat(Number(el.dataset.id));
   else if (a === "chat-older") loadOlderChat();
@@ -1675,6 +1748,7 @@ document.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if (f.id === "admin-form") submitAdminCode(f);
   else if (f.id === "fb-form") submitFeedback(f);
+  else if (f.id === "chat-edit-form") saveChatEdit(f);
   else if (f.id === "survey-form") submitSurvey(f);
   else if (f.id === "fb-reply-form") {
     const reply = f.reply.value.trim();

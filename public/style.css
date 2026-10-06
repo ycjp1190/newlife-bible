@@ -354,3 +354,9 @@ nav.tabs button { position: relative; }
 .hidden { display: none !important; }
 #survey .input { margin-top: 4px; }
 a.btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }
+/* 대화: 길게 누르기 (카톡처럼) */
+[data-lp] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: transform .15s, filter .15s; }
+[data-lp].pressing { transform: scale(.96); filter: brightness(.92); }
+.msg-edited { display: block; font-size: 10.5px; color: var(--muted); text-align: right; }
+.msg-actions { display: flex; gap: 8px; margin-top: 14px; }
+.msg-actions .btn { flex: 1; }

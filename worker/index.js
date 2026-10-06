@@ -751,7 +751,8 @@ async function handleApi(request, env, url, ctx) {
 // ── 대화(단톡방) ───────────────────────────────────────
 const REACTIONS = ["🙏", "❤️", "👍", "👌", "👏", "🙌", "😊", "😢", "🔥"]; // 공감 (화면과 서버가 같아야 함)
 const MSG_COLS = `m.id, m.member_id, mem.name, m.kind, m.day,
-  CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at IS NOT NULL AS deleted`;
+  CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at IS NOT NULL AS deleted,
+  m.edited_at IS NOT NULL AND m.deleted_at IS NULL AS edited`;
 
 async function attachReactions(env, rows) {
   if (!rows.length) return rows;
@@ -941,6 +942,19 @@ async function handleChat(request, env, ctx, me, path, method, url) {
   }
 
   const delMatch = path.match(/^\/chat\/(\d+)$/);
+  // 내 메시지 고치기 (지운 메시지·소식은 안 됨)
+  if (delMatch && method === "PUT") {
+    const id = Number(delMatch[1]);
+    const text = String((await readBody(request)).body || "").trim();
+    if (!text) throw new HttpError(400, "내용을 적어 주세요.");
+    if (text.length > 1000) throw new HttpError(400, "메시지는 1000자까지예요.");
+    const msg = await env.DB.prepare("SELECT member_id, kind, deleted_at FROM messages WHERE id = ?").bind(id).first();
+    if (!msg) throw new HttpError(404, "메시지를 찾지 못했어요.");
+    if (msg.member_id !== me.id || msg.kind !== "text" || msg.deleted_at) throw new HttpError(403, "내가 쓴 메시지만 고칠 수 있어요.");
+    await env.DB.prepare("UPDATE messages SET body = ?, edited_at = ? WHERE id = ?").bind(text, nowIso(), id).run();
+    signalChat(env, ctx);
+    return json({ ok: true });
+  }
   if (delMatch && method === "DELETE") {
     const id = Number(delMatch[1]);
     const msg = await env.DB.prepare("SELECT member_id, kind FROM messages WHERE id = ?").bind(id).first();
