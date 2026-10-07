@@ -1,6 +1,6 @@
 // "말씀 읽고 새 인생" 앱 화면
 import {
-  chapterKey, dateOfDaySched, dayOnDate, EVERY_DAY, formatChapters, isDayDone, itemLabel, kstToday, maskCount,
+  chapterKey, dateOfDaySched, dayOnDate, EVERY_DAY, flowDay, formatChapters, isDayDone, itemLabel, kstToday, maskCount,
   MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
@@ -85,7 +85,11 @@ async function api(path, { method = "GET", body } = {}) {
 const total = () => S.plan.length;
 // 날짜 ↔ DAY: 개인 모드는 읽는 요일 일정, 모임 모드는 시작일부터 매일
 const schedNow = () => S.sched || S.startDate;
-const todayDay = () => (S.startDate ? dayOnDate(schedNow(), S.today).day : null);
+const calendarDay = () => (S.startDate ? dayOnDate(schedNow(), S.today).day : null); // 날짜 기준 DAY
+// 이어 읽기(개인, 달력형 제외): 못 읽은 첫 DAY 부터. 패스: 날짜 기준 그대로
+const flowMode = () => personal() && !fixedPlan() && S.catchUp === "flow";
+const todayDay = () => (flowMode() ? flowDay(calendarDay(), total(), (d) => dayDone(d)) : calendarDay());
+const lagDays = () => (flowMode() && S.startDate ? calendarDay() - todayDay() : 0); // 예정보다 늦어진 날 수
 const restToday = () => (S.startDate ? dayOnDate(schedNow(), S.today).rest : false); // 오늘이 쉬는 요일인지
 const dateOf = (day) => dateOfDaySched(schedNow(), day);
 const unseenNotices = () => noticesFor(personal()).filter((n) => n.id > S.noticeSeen).length;
@@ -120,6 +124,8 @@ async function loadState() {
   S.roadmap = data.roadmap || "flow397";
   S.perDay = data.perDay || 3;
   S.readDays = data.readDays ?? EVERY_DAY;
+  S.catchUp = data.catchUp || "skip";
+  S.catchUpAsked = data.catchUpAsked !== false;
   S.sched = data.sched || null;
   S.noticeSeen = data.noticeSeen ?? latestNotice(personal());
   S.startDate = data.startDate;
@@ -282,7 +288,7 @@ function renderJoin() {
 // 개인 모드 입장: 이름 + 시작일 / 복구 코드로 이어 쓰기
 function renderJoinPersonal() {
   const iosBrowser = isIOS() && !isStandalone();
-  if (!S.pick || S.pick.context !== "join") S.pick = { step: "name", context: "join", name: "", roadmap: null, perDay: 3, readDays: EVERY_DAY, start: kstToday() };
+  if (!S.pick || S.pick.context !== "join") S.pick = { step: "name", context: "join", name: "", roadmap: null, perDay: 3, readDays: EVERY_DAY, catchUp: "skip", start: kstToday() };
   const form = S.joinView === "recover"
     ? `<form class="card" id="recover-form">
         <label class="field"><span>복구 코드</span>
@@ -317,7 +323,7 @@ async function finishJoin(data, welcome) {
 function pickSteps() {
   const p = S.pick;
   const base = p.context === "join" ? ["name", "roadmap"] : ["roadmap"];
-  return p.roadmap && isFixed(p.roadmap) ? [...base, "mcstart"] : [...base, "perday", "weekdays", "start"];
+  return p.roadmap && isFixed(p.roadmap) ? [...base, "mcstart"] : [...base, "perday", "weekdays", "catchup", "start"];
 }
 
 // 요일 고르기 버튼 (월요일부터)
@@ -386,7 +392,12 @@ function pickerHtml() {
       <p class="muted" style="margin:-6px 0 12px">생활에 맞게 ${MIN_READ_DAYS}일 이상 골라 주세요. 쉬는 요일에는 알림이 오지 않아요.</p>
       ${weekdayChips(p.readDays, "pick-wd")}
       ${planSummaryHtml(p)}
-      <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-next" ${validMask(p.readDays) ? "" : "disabled"}>다음: 시작일</button></div>`;
+      <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-next" ${validMask(p.readDays) ? "" : "disabled"}>다음</button></div>`;
+  }
+  if (p.step === "catchup") {
+    return `${dots}<p class="pick-q">못 읽고 지나간 날은 어떻게 할까요?</p>
+      ${catchUpCards(p.catchUp, "pick-cu")}
+      <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-next">다음: 시작일</button></div>`;
   }
   if (p.step === "start") {
     return `${dots}<p class="pick-q">언제부터 읽을까요?</p>
@@ -407,6 +418,46 @@ function pickerHtml() {
     <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-submit">${finish}</button></div>`;
 }
 
+// 못 읽은 날 처리: 패스 / 이어 읽기 카드
+const CATCH_UP_TEXT = {
+  skip: ["패스", "읽는 것 자체에 중점", "오늘은 항상 오늘 날짜 분량을 읽어요. 못 읽은 날은 '밀린 읽기'에 남아요. 끝나는 날은 그대로예요."],
+  flow: ["이어 읽기", "내용의 흐름에 중점", "못 읽은 곳부터 이어서 읽어요. 하루를 놓치면 오늘은 어제 분량을 읽고, 그만큼 끝나는 날이 늦어져요."],
+};
+function catchUpCards(selected, action) {
+  return Object.entries(CATCH_UP_TEXT).map(([k, [name, focus, desc]]) => `<button class="rm ${selected === k ? "on" : ""}" type="button" data-action="${action}" data-mode="${k}">
+    <span class="rm-title">${name}</span><span class="rm-desc">${desc}</span><span class="rm-tag">${focus}</span></button>`).join("");
+}
+
+let cuDraft = "skip";
+function openCatchUp(intro = false) {
+  if (!intro || !$("#catchup-sheet")) cuDraft = S.catchUp;
+  openSheet(`<div id="catchup-sheet">
+    <h3>${intro ? "새 기능: 못 읽은 날 처리" : "못 읽은 날 처리"}</h3>
+    ${intro ? `<p class="muted" style="margin:0 0 12px">못 읽고 지나간 날을 어떻게 할지 고를 수 있어요. 지금은 '패스'예요. 설정 → 읽기 계획에서 언제든 바꿀 수 있어요.</p>` : ""}
+    ${catchUpCards(cuDraft, "cu-pick")}
+    <div class="btn-row">${intro ? `<button class="btn secondary" data-action="cu-keep">지금처럼 (패스)</button>` : `<button class="btn secondary" data-action="close-sheet">취소</button>`}
+      <button class="btn grow" data-action="cu-save">${intro ? "이걸로 할게요" : "저장"}</button></div>
+  </div>`);
+}
+
+async function saveCatchUp(mode) {
+  try {
+    await api("/catch-up", { method: "PUT", body: { mode } });
+    const changed = mode !== S.catchUp;
+    await loadState();
+    closeSheet();
+    render();
+    toast(changed ? (mode === "flow" ? "이제 못 읽은 곳부터 이어서 읽어요." : "이제 오늘 날짜 분량을 읽어요.") : "그대로 둘게요.");
+  } catch (e) { toast(e.message); }
+}
+
+// 기존 개인용 사용자에게 한 번 안내 (설문이 먼저, 다른 창이 있으면 다음에)
+function autoCatchUpAsk() {
+  if (!personal() || fixedPlan() || S.catchUpAsked || !S.surveyDone) return;
+  if (sheetOpen() && !$("#install-guide")) return; // 설치 안내보다는 먼저
+  openCatchUp(true);
+}
+
 function rerenderPicker() {
   if (S.pick.context === "join") render();
   else openSheet(pickerHtml());
@@ -419,14 +470,14 @@ function pickGo(delta) {
 }
 
 function openPlanChange() {
-  S.pick = { step: "roadmap", context: "change", roadmap: S.roadmap, perDay: S.perDay, readDays: S.readDays, start: kstToday() };
+  S.pick = { step: "roadmap", context: "change", roadmap: S.roadmap, perDay: S.perDay, readDays: S.readDays, catchUp: S.catchUp, start: kstToday() };
   openSheet(pickerHtml());
 }
 
 async function submitPick(btn) {
   const p = S.pick;
   const start = isFixed(p.roadmap) ? kstToday() : p.start;
-  const body = { roadmap: p.roadmap, per_day: p.perDay, read_days: isFixed(p.roadmap) ? EVERY_DAY : p.readDays, start_date: start };
+  const body = { roadmap: p.roadmap, per_day: p.perDay, read_days: isFixed(p.roadmap) ? EVERY_DAY : p.readDays, catch_up: isFixed(p.roadmap) ? "skip" : p.catchUp, start_date: start };
   btn.disabled = true;
   try {
     if (p.context === "join") {
@@ -539,6 +590,7 @@ function renderToday() {
     const done = dayDone(t);
     main = `<div class="card">
       <div class="today-head"><div class="day-no">${fixedPlan() ? `${monthDay(S.today)} <small>${S.roadmap === "community" ? `${dayOfYear(S.today)}일차` : "본문"}</small>` : `DAY ${t} <small>/ ${total()}</small>`}</div><span class="chip">${esc(partLabel(d.chapters))}</span></div>
+      ${lagDays() > 0 ? `<p class="lag-note">이어 읽기 · 예정보다 <b>${lagDays()}일</b> 늦어요 · 예상 완독 ${niceDate(dateOfDaySched(schedNow(), total() + lagDays()), true)}</p>` : ""}
       <p class="passage">${esc(formatChapters(d.chapters))}</p>
       ${checksHtml(t)}
       ${videoButton(S.today)}
@@ -1116,7 +1168,10 @@ function renderSettings() {
         <button class="btn secondary" data-action="start-date">${S.startDate ? "시작일 바꾸기" : "시작일 정하기"}</button></div>
       ${S.startDate ? `<div class="setting-row"><div class="main">읽는 요일 <b>${weekdaysText(S.readDays)}</b>
           <small>${forAll("모두에게 같이 적용돼요")}</small></div>
-        <button class="btn secondary" data-action="read-days">요일 바꾸기</button></div>` : ""}`}
+        <button class="btn secondary" data-action="read-days">요일 바꾸기</button></div>` : ""}
+      ${personal() ? `<div class="setting-row"><div class="main">못 읽은 날 <b>${CATCH_UP_TEXT[S.catchUp]?.[0] || "패스"}</b>
+          <small>${S.catchUp === "flow" ? "못 읽은 곳부터 이어서" : "날짜 기준, 밀린 읽기로 남김"}</small></div>
+        <button class="btn secondary" data-action="catch-up">바꾸기</button></div>` : ""}`}
       ${personal() ? `<button class="btn secondary block mt" data-action="plan-change">계획 바꾸기</button>`
         : `<button class="btn secondary block mt" data-action="tab" data-tab="plan">전체 일정 보기 · 범위 바꾸기</button>`}
     </div>
@@ -1648,6 +1703,11 @@ document.addEventListener("click", async (ev) => {
   else if (a === "pick-back") pickGo(-1);
   else if (a === "pick-submit") submitPick(el);
   else if (a === "plan-change") openPlanChange();
+  else if (a === "pick-cu") { S.pick.catchUp = el.dataset.mode; rerenderPicker(); }
+  else if (a === "catch-up") openCatchUp();
+  else if (a === "cu-pick") { cuDraft = el.dataset.mode; document.querySelectorAll('[data-action="cu-pick"]').forEach((b) => b.classList.toggle("on", b.dataset.mode === cuDraft)); }
+  else if (a === "cu-save") saveCatchUp(cuDraft);
+  else if (a === "cu-keep") { S.catchUpAsked = true; api("/catch-up/asked", { method: "POST" }).catch(() => {}); closeSheet(); toast("지금처럼 둘게요. 설정에서 언제든 바꿀 수 있어요."); }
   else if (a === "pick-wd") { S.pick.readDays ^= 1 << Number(el.dataset.i); rerenderPicker(); }
   else if (a === "read-days") openReadDays();
   else if (a === "start-date") openStartDate();
@@ -1957,6 +2017,7 @@ async function start() {
   await detectPush().catch(() => {});
   render();
   autoSurvey(true);
+  autoCatchUpAsk();
   if (S.tab === "together") loadMembers();
   if (hasAdmin()) loadAdmin(); // 관리자 기기: 새 제보가 있으면 관리자 탭에 빨간 점
 }

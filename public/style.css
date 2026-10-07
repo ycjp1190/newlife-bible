@@ -362,3 +362,5 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .msg-actions .btn { flex: 1; }
 /* 길게 누를 때 이모티콘·버튼 글자가 선택되지 않게 */
 button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* 이어 읽기: 예정보다 늦어진 날 */
+.lag-note { margin: -4px 0 10px; font-size: 13.5px; color: var(--gold); }

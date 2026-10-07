@@ -1,5 +1,5 @@
 // 진도 계산과 알림 대상 판단 (DB와 무관한 순수 함수 — 테스트하기 쉽게 분리)
-import { chapterKey, dateOfDaySched, dayOnDate, formatChapters, isDayDone, streakDays } from "../public/shared/bible.js";
+import { chapterKey, dateOfDaySched, dayOnDate, flowDay, formatChapters, isDayDone, streakDays } from "../public/shared/bible.js";
 
 export const SLOTS = ["morning", "lunch", "evening"];
 const CATCH_UP_MINUTES = 60; // 서버 예약 실행이 늦어져도 60분 안이면 보낸다
@@ -10,11 +10,14 @@ const toMinutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3,
 // sched: 시작일 문자열(매일 읽기) 또는 읽는 요일 일정 [{date, day, mask}] (개인 모드)
 // 쉬는 요일이면 todayDay 는 다음에 읽을 DAY, rest: true
 // fromDay: 모임 중도 참여자는 이 DAY 부터만 밀린 날로 센다 (그 전은 선택)
-export function progress(plan, sched, today, checked, fromDay = 1) {
+// mode: 'skip'(패스, 날짜 기준) | 'flow'(이어 읽기: 못 읽은 첫 날부터, 밀린 날 없음, lag = 늦어진 날 수)
+export function progress(plan, sched, today, checked, fromDay = 1, mode = "skip") {
   const total = plan.length;
   const on = sched ? dayOnDate(sched, today) : null;
-  const todayDay = on ? on.day : null;
   const done = (d) => isDayDone(d.chapters, checked.get(d.day) || new Set());
+  const calendarDay = on ? on.day : null;
+  const todayDay = mode === "flow" ? flowDay(calendarDay, total, (day) => done(plan[day - 1])) : calendarDay;
+  const lag = calendarDay !== null && todayDay !== null ? calendarDay - todayDay : 0;
   const missed = [];
   const missedDetail = []; // 어제 이전 날 중 아직 체크 안 한 장: [{ day, remaining: [장...] }]
   let doneDays = 0;
@@ -34,7 +37,7 @@ export function progress(plan, sched, today, checked, fromDay = 1) {
     todayRemaining = todayPlan.chapters.filter((c) => !set.has(chapterKey(c)));
   }
   return {
-    total, todayDay, rest: !!on?.rest, doneDays, missed, missedDetail,
+    total, todayDay, rest: !!on?.rest, lag, doneDays, missed, missedDetail,
     missedChapters: missedDetail.reduce((n, m) => n + m.remaining.length, 0),
     todayChapters: todayPlan ? todayPlan.chapters : [],
     todayRemaining,
@@ -70,7 +73,8 @@ export function dueSlots(member, nowHHMM, sent) {
 export function buildMessage(slot, prog) {
   if (prog.rest || !prog.todayChapters.length) return null; // 쉬는 요일·시작 전·완주 후·쉬는 날
   const day = `DAY ${prog.todayDay}`;
-  const missedNote = prog.missed.length ? ` · 밀린 읽기 ${prog.missed.length}일` : "";
+  const missedNote = prog.lag > 0 ? ` · 예정보다 ${prog.lag}일 늦어요` // 이어 읽기
+    : prog.missed.length ? ` · 밀린 읽기 ${prog.missed.length}일` : "";
   if (slot === "morning") {
     return {
       title: `오늘의 말씀 · ${day}`,

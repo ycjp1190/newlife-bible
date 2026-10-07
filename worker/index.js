@@ -209,6 +209,12 @@ const setSetting = (env, key, value) => (value === null
   ? env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(key)
   : env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, String(value)));
 
+const CATCH_UP = ["skip", "flow"];
+function checkCatchUp(value) {
+  if (!CATCH_UP.includes(value)) throw new HttpError(400, "못 읽은 날 처리 방식을 골라 주세요.");
+  return value;
+}
+
 function checkMask(value) {
   const mask = Number(value);
   if (!validMask(mask)) throw new HttpError(400, `읽는 요일은 ${MIN_READ_DAYS}일 이상 골라 주세요.`);
@@ -223,7 +229,9 @@ function checkPlanChoice(body) {
   if (!Number.isInteger(perDay) || perDay < 1 || perDay > 10) throw new HttpError(400, "하루 분량은 1–10장 사이로 골라 주세요.");
   // 달력형(333·맥체인)은 날짜별 본문이라 매일만
   const readDays = isFixed(roadmap) ? EVERY_DAY : checkMask(body.read_days ?? EVERY_DAY);
-  return { roadmap, perDay, startDate: checkDate(body.start_date), readDays };
+  // 못 읽은 날: 'skip'(패스) | 'flow'(이어 읽기). 달력형은 패스만
+  const catchUp = isFixed(roadmap) ? "skip" : checkCatchUp(body.catch_up ?? "skip");
+  return { roadmap, perDay, startDate: checkDate(body.start_date), readDays, catchUp };
 }
 
 const planText = (roadmap, perDay, readDays = EVERY_DAY) => (isFixed(roadmap) ? ROADMAPS[roadmap].name
@@ -458,6 +466,7 @@ async function handleApi(request, env, url, ctx) {
       roadmap: isPersonal(env) ? me.roadmap : "flow397",
       perDay: isPersonal(env) ? me.per_day : 3,
       readDays, sched, noticeSeen: me.notice_seen ?? 0,
+      ...(isPersonal(env) ? { catchUp: me.catch_up || "skip", catchUpAsked: !!me.catch_up_asked } : {}),
       me: publicMember(me), plan, startDate, today: kstToday(), checks: mine,
       vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
       ...(isPersonal(env) ? {} : { chatUnread: await chatUnread(env, me) }),
@@ -525,14 +534,14 @@ async function handleApi(request, env, url, ctx) {
 
   // 개인 모드: 읽기 계획(로드맵·하루 분량·시작일) 바꾸기. 새 계획으로 DAY 1 부터 다시 시작, 이전 체크는 보관.
   if (path === "/plan/choose" && method === "PUT" && isPersonal(env)) {
-    const { roadmap, perDay, startDate, readDays } = checkPlanChoice(await readBody(request));
+    const { roadmap, perDay, startDate, readDays, catchUp } = checkPlanChoice(await readBody(request));
     const version = me.plan_version + 1;
     const next = { ...me, roadmap, per_day: perDay, start_date: startDate, plan_version: version };
     await env.DB.batch([
       env.DB.prepare("DELETE FROM member_plan WHERE member_id = ?").bind(me.id),
       insertPlanStmt(env, me.id, buildPlan(roadmap, perDay, startDate), 1),
-      env.DB.prepare("UPDATE members SET roadmap = ?, per_day = ?, start_date = ?, plan_version = ?, read_days = ?, sched = NULL WHERE id = ?")
-        .bind(roadmap, perDay, startDate, version, readDays, me.id),
+      env.DB.prepare("UPDATE members SET roadmap = ?, per_day = ?, start_date = ?, plan_version = ?, read_days = ?, sched = NULL, catch_up = ?, catch_up_asked = 1 WHERE id = ?")
+        .bind(roadmap, perDay, startDate, version, readDays, catchUp, me.id),
       historyStmt(env, next, "plan", null,
         `${planText(me.roadmap, me.per_day, me.read_days)} (${me.start_date} 시작)`, `${planText(roadmap, perDay, readDays)} (${startDate} 시작)`),
     ]);
@@ -556,6 +565,21 @@ async function handleApi(request, env, url, ctx) {
         : [setSetting(env, "read_days", mask), setSetting(env, "sched", sched)]),
       historyStmt(env, me, "read_days", null, String(before), String(mask)),
     ]);
+    return json({ ok: true });
+  }
+
+  // 개인 모드: 못 읽은 날 처리 방식 바꾸기 / 안내 팝업 '지금처럼'
+  if (path === "/catch-up" && method === "PUT" && isPersonal(env)) {
+    const mode = checkCatchUp((await readBody(request)).mode);
+    if (isFixed(me.roadmap) && mode !== "skip") throw new HttpError(400, "날짜별 본문 계획은 '패스'만 돼요.");
+    const before = me.catch_up || "skip";
+    const stmts = [env.DB.prepare("UPDATE members SET catch_up = ?, catch_up_asked = 1 WHERE id = ?").bind(mode, me.id)];
+    if (mode !== before) stmts.push(historyStmt(env, me, "catch_up", null, before, mode));
+    await env.DB.batch(stmts);
+    return json({ ok: true });
+  }
+  if (path === "/catch-up/asked" && method === "POST" && isPersonal(env)) {
+    await env.DB.prepare("UPDATE members SET catch_up_asked = 1 WHERE id = ?").bind(me.id).run();
     return json({ ok: true });
   }
 
@@ -654,6 +678,7 @@ async function handleApi(request, env, url, ctx) {
     }
     if (h.kind === "plan") throw new HttpError(409, "계획 바꾸기는 되돌릴 수 없어요. '계획 바꾸기'로 다시 골라 주세요.");
     if (h.kind === "read_days") throw new HttpError(409, "읽는 요일은 설정의 '요일 바꾸기'로 다시 골라 주세요.");
+    if (h.kind === "catch_up") throw new HttpError(409, "못 읽은 날 처리는 설정의 '바꾸기'로 다시 골라 주세요.");
     const note = `#${h.id} 되돌리기`;
     if (h.kind === "day") {
       const row = await getDayRow(env, me, h.day);
@@ -997,16 +1022,16 @@ async function joinPersonal(request, env) {
   const body = await readBody(request);
   const n = cleanName(body.name);
   // roadmap·per_day 가 없으면(예전 화면) 예수님에서 시작하는 통독 · 하루 3장
-  const { roadmap, perDay, startDate: start_date, readDays } = checkPlanChoice(body);
+  const { roadmap, perDay, startDate: start_date, readDays, catchUp } = checkPlanChoice(body);
   const token = newToken();
   const now = nowIso();
   const appNow = request.headers.get("X-App-Mode") === "standalone" ? now : null; // 앱에서 시작했으면 앱 기록도
   for (let attempt = 0; ; attempt++) {
     try {
       await env.DB.prepare(
-        `INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, read_days, notice_seen, created_at, last_seen_at, app_first_at, app_last_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, readDays, latestNotice(true), now, now, appNow, appNow).run(); // 새 사람은 지난 소식 표시 없이
+        `INSERT INTO members (name, token, recovery_code, start_date, roadmap, per_day, read_days, catch_up, catch_up_asked, notice_seen, created_at, last_seen_at, app_first_at, app_last_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+      ).bind(n, token, newRecoveryCode(), start_date, roadmap, perDay, readDays, catchUp, latestNotice(true), now, now, appNow, appNow).run(); // 새 사람은 지난 소식 표시 없이
       break;
     } catch (e) {
       if (attempt >= 3) throw e; // 복구 코드가 우연히 겹치면 다시 만든다
@@ -1047,6 +1072,9 @@ function describeHistory(h) {
     summary = `전체 표 편집 (${before.length}일 → ${after.length}일, 바뀐 DAY: ${days || "없음"})`;
   } else if (h.kind === "plan") {
     summary = `읽기 계획: ${h.before_value} → ${h.after_value}`;
+  } else if (h.kind === "catch_up") {
+    const label = { skip: "패스", flow: "이어 읽기" };
+    summary = `못 읽은 날: ${label[h.before_value] || h.before_value} → ${label[h.after_value] || h.after_value}`;
   } else if (h.kind === "read_days") {
     summary = `읽는 요일: ${weekdaysText(Number(h.before_value))} → ${weekdaysText(Number(h.after_value))}`;
   } else {
@@ -1101,7 +1129,7 @@ async function runNotifications(env, now) {
     const plan = shared ? shared.plan : await loadPlan(env, m);
     const sched = shared ? shared.sched : memberSched(m);
     if (!sched) continue;
-    const prog = progress(plan, sched, today, checks.get(m.id) || new Map(), m.join_day ?? 1);
+    const prog = progress(plan, sched, today, checks.get(m.id) || new Map(), m.join_day ?? 1, m.catch_up || "skip");
     // 여러 칸이 한꺼번에 밀렸으면 가장 최근 칸 하나만 보낸다
     const slot = slots[slots.length - 1];
     const msg = buildMessage(slot, prog);

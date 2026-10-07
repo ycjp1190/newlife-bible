@@ -219,6 +219,14 @@ export function isDayDone(chapters, checkedKeys) {
   return chapters.every((c) => checkedKeys.has(chapterKey(c)));
 }
 
+// 이어 읽기(개인 모드 'flow'): 오늘 읽을 DAY = 아직 다 읽지 않은 첫 DAY (날짜 기준 DAY 를 넘지 않음)
+// calendarDay: 날짜 기준 DAY, isDone(day): 그날 분량을 다 읽었는가
+export function flowDay(calendarDay, total, isDone) {
+  if (calendarDay === null || calendarDay < 1) return calendarDay;
+  for (let d = 1; d <= Math.min(calendarDay, total); d++) if (!isDone(d)) return d;
+  return calendarDay;
+}
+
 // 연속 읽기 일수: 오늘까지(오늘 아직 안 읽었으면 어제까지) 하루도 빠짐없이 다 읽은 날 수
 // isDone(day) → 그날 분량을 다 읽었는가
 export function streakDays(todayDay, total, isDone) {
