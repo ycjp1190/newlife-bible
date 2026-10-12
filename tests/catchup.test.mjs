@@ -74,3 +74,18 @@ test("기존 개인 DB 에 0005 적용: 패스 그대로, 안내 팝업 대상",
   await call("/catch-up/asked", { method: "POST", token: "tok" });
   assert.equal((await call("/state", { token: "tok" })).data.catchUpAsked, true);
 });
+
+test("달력형: 지난 날짜부터 시작하면 그 사이는 밀린 읽기, 미래는 안 됨", async () => {
+  const call = makeApp();
+  const today = kstToday();
+  const past = new Date(Date.parse(today + "T00:00:00Z") - 10 * 86400000).toISOString().slice(0, 10);
+  const future = new Date(Date.parse(today + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
+  assert.equal((await call("/join", { method: "POST", body: { name: "가", roadmap: "community", start_date: future } })).status, 400);
+  const t = (await call("/join", { method: "POST", body: { name: "가", roadmap: "community", start_date: past } })).data.token;
+  const s = (await call("/state", { token: t })).data;
+  assert.equal(s.startDate, past);
+  const { progress } = await import("../worker/logic.js");
+  const p = progress(s.plan, s.sched, s.today, new Map());
+  assert.equal(p.todayDay, 11);
+  assert.equal(p.missed.length, 10);
+});

@@ -229,6 +229,11 @@ function checkPlanChoice(body) {
   if (!Number.isInteger(perDay) || perDay < 1 || perDay > 10) throw new HttpError(400, "하루 분량은 1–10장 사이로 골라 주세요.");
   // 달력형(333·맥체인)은 날짜별 본문이라 매일만
   const readDays = isFixed(roadmap) ? EVERY_DAY : checkMask(body.read_days ?? EVERY_DAY);
+  // 달력형은 지난 날짜부터도 시작 가능 (2년 전까지, 미래는 안 됨. 화면에서는 1년 전까지 고르게 함)
+  if (isFixed(roadmap) && body.start_date) {
+    const back = (Date.parse(kstToday()) - Date.parse(body.start_date)) / 86400000;
+    if (back < 0 || back > 730) throw new HttpError(400, "시작 날짜는 오늘부터 2년 전 사이로 골라 주세요.");
+  }
   // 못 읽은 날: 'skip'(패스) | 'flow'(이어 읽기). 달력형은 패스만
   const catchUp = isFixed(roadmap) ? "skip" : checkCatchUp(body.catch_up ?? "skip");
   return { roadmap, perDay, startDate: checkDate(body.start_date), readDays, catchUp };

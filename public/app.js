@@ -135,6 +135,8 @@ async function loadState() {
   S.feedbackReplies = data.feedbackReplies || 0;
   S.surveyDone = data.surveyDone !== false; // 일회용 설문 (예전 서버면 묻지 않음)
   S.checks = new Map(Object.entries(data.checks).map(([d, keys]) => [Number(d), new Set(keys)]));
+  // 아직 서버에 저장 중인 체크는 불러온(이전) 상태로 덮어쓰지 않는다
+  for (const [k, { day, key, checked }] of pendingChecks) applyCheck(day, key, checked);
   S.loaded = true;
 }
 
@@ -407,12 +409,17 @@ function pickerHtml() {
       ${p.context === "change" ? `<p class="hint">새 계획으로 DAY 1부터 다시 시작해요. 지금까지의 체크 기록은 보관돼요.</p>` : ""}
       <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-submit">${finish}</button></div>`;
   }
-  // mcstart: 맥체인은 오늘 날짜 본문부터
+  // mcstart: 달력형(공동체성경읽기·맥체인) — 시작 날짜를 고른다 (지난 날짜도 가능, 그 사이 분량은 밀린 읽기)
   const today = kstToday();
-  const readings = readingsOn(p.roadmap, today);
-  return `${dots}<p class="pick-q">오늘 날짜 본문부터 시작해요</p>
-    <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS[p.roadmap].name)} · ${esc(ROADMAPS[p.roadmap].note)}</p>
-    <div class="pick-summary"><p class="muted" style="margin:0 0 6px">${monthDay(today)} 본문${p.roadmap === "community" ? ` · ${dayOfYear(today)}일차` : ""}</p>
+  const minStart = new Date(Date.parse(today + "T00:00:00Z") - 365 * 86400000).toISOString().slice(0, 10);
+  const start = p.mcStart || today;
+  const readings = readingsOn(p.roadmap, start);
+  const behind = Math.round((Date.parse(today) - Date.parse(start)) / 86400000);
+  return `${dots}<p class="pick-q">어느 날짜 본문부터 시작할까요?</p>
+    <p class="muted" style="margin:-6px 0 12px">${esc(ROADMAPS[p.roadmap].name)} · 날짜마다 본문이 정해져 있어요</p>
+    <input class="input" type="date" id="pick-mcstart" value="${esc(start)}" min="${minStart}" max="${today}" required>
+    ${behind > 0 ? `<p class="hint">지난 날짜부터 시작하면 오늘까지 <b>${behind}일치</b>가 '밀린 읽기'로 표시돼요. 몰아서 읽고 체크하면 돼요.</p>` : ""}
+    <div class="pick-summary"><p class="muted" style="margin:0 0 6px">${monthDay(start)} 본문${p.roadmap === "community" ? ` · ${dayOfYear(start)}일차` : ""}</p>
       <ul class="plain">${readings.map((c) => `<li>${esc(itemLabel(c))}</li>`).join("")}</ul></div>
     <p class="hint">하루 분량은 읽기표대로 정해져 있어 따로 고르지 않아요.${p.context === "change" ? " 지금까지의 체크 기록은 보관돼요." : ""}</p>
     <div class="btn-row">${back}<button class="btn grow" type="button" data-action="pick-submit">${finish}</button></div>`;
@@ -476,7 +483,7 @@ function openPlanChange() {
 
 async function submitPick(btn) {
   const p = S.pick;
-  const start = isFixed(p.roadmap) ? kstToday() : p.start;
+  const start = isFixed(p.roadmap) ? (p.mcStart || kstToday()) : p.start;
   const body = { roadmap: p.roadmap, per_day: p.perDay, read_days: isFixed(p.roadmap) ? EVERY_DAY : p.readDays, catch_up: isFixed(p.roadmap) ? "skip" : p.catchUp, start_date: start };
   btn.disabled = true;
   try {
@@ -1607,22 +1614,36 @@ function render() {
 }
 
 // ── 이벤트 ────────────────────────────────────────────
+// 저장 중인 체크: "day|key" → { day, key, checked, seq }
+const pendingChecks = new Map();
+const lastTap = new Map(); // 같은 칸을 아주 짧은 간격으로 두 번 누른 것(유령 클릭)은 무시
+let checkSeq = 0;
+function applyCheck(day, key, checked) {
+  if (!S.checks.has(day)) S.checks.set(day, new Set());
+  const set = S.checks.get(day);
+  checked ? set.add(key) : set.delete(key);
+}
+
 async function toggleCheck(btn) {
   const day = Number(btn.dataset.day);
   const key = btn.dataset.key;
-  if (!S.checks.has(day)) S.checks.set(day, new Set());
-  const set = S.checks.get(day);
-  const checked = !set.has(key);
-  checked ? set.add(key) : set.delete(key);
+  const id = `${day}|${key}`;
+  if (Date.now() - (lastTap.get(id) || 0) < 400) return;
+  lastTap.set(id, Date.now());
+  const checked = !(S.checks.get(day) || new Set()).has(key);
+  applyCheck(day, key, checked);
+  const seq = ++checkSeq;
+  pendingChecks.set(id, { day, key, checked, seq });
   const nowDone = checked && dayDone(day);
   rerenderKeepingSheet(day);
   if (nowDone) celebrateDay(day);
   try {
     await api("/check", { method: "POST", body: { day, chapter: key, checked } });
   } catch (e) {
-    checked ? set.delete(key) : set.add(key);
-    rerenderKeepingSheet(day);
+    if (pendingChecks.get(id)?.seq === seq) { applyCheck(day, key, !checked); rerenderKeepingSheet(day); }
     toast(e.message);
+  } finally {
+    if (pendingChecks.get(id)?.seq === seq) pendingChecks.delete(id);
   }
 }
 
@@ -1781,6 +1802,7 @@ document.addEventListener("click", async (ev) => {
 document.addEventListener("change", (ev) => {
   const el = ev.target;
   if (el.id === "pick-start" && el.value) { S.pick.start = el.value; rerenderPicker(); return; }
+  if (el.id === "pick-mcstart" && el.value) { S.pick.mcStart = el.value > kstToday() ? kstToday() : el.value; rerenderPicker(); return; }
   if (el.dataset.action === "slot-on") saveMe({ [`${el.dataset.slot}_on`]: el.checked });
   if (el.dataset.action === "chat-push") saveMe({ chat_push: el.checked });
   if (el.dataset.action === "time") {
