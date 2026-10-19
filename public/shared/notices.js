@@ -7,6 +7,12 @@
 // (개인용 10번 소식은 지웠다. 이미 10번까지 본 사람이 있으니 다음 개인용 소식은 11번부터)
 export const NOTICES = [
   {
+    id: 13,
+    date: "2026-10-19",
+    title: "10월 19일",
+    items: ["일정 탭을 열면 오늘 날짜로 바로 이동해요. 스크롤해도 위쪽 버튼이 계속 보이고, 구간 이름도 함께 보여요"],
+  },
+  {
     id: 12,
     date: "2026-10-13",
     title: "10월 13일",
@@ -54,6 +60,12 @@ export const NOTICES = [
 export const LATEST_NOTICE = NOTICES[0].id;
 
 export const GROUP_NOTICES = [
+  {
+    id: 12,
+    date: "2026-10-19",
+    title: "10월 19일",
+    items: ["일정 탭을 열면 오늘 날짜로 바로 이동해요. 스크롤해도 위쪽 버튼이 계속 보이고, '복음을 이해하다' 같은 구간 이름도 함께 보여요"],
+  },
   {
     id: 11,
     date: "2026-10-07",

@@ -22,7 +22,7 @@ const store = {
 const S = {
   token: store.get("token"),
   me: null, plan: [], startDate: null, today: kstToday(), checks: new Map(),
-  vapid: null, loaded: false, tab: store.get("tab") || "today",
+  vapid: null, loaded: false, tab: store.get("tab") || "today", planJump: true,
   mode: store.get("mode") || "group", joinView: "new",
   roadmap: "flow397", perDay: 3,
   readDays: EVERY_DAY, sched: null, noticeSeen: 999, // 읽는 요일·일정(개인: 나만, 모임: 공통), 확인한 업데이트 소식 번호
@@ -1091,7 +1091,16 @@ async function deleteChat(id) {
 function renderPlan() {
   const t = todayDay();
   const doneCount = S.plan.filter((d) => dayDone(d.day)).length;
+  // 구간(예: "02 · 복음을 이해하다")이 바뀌는 날 위에 구간 제목 줄을 넣는다. 달력형은 구간이 하나라 넣지 않는다.
+  let lastSection = "";
+  const rows = S.plan.map((d) => {
+    const label = fixedPlan() ? "" : partLabel(d.chapters);
+    const head = label && label !== "쉬는 날" && label !== lastSection ? `<li class="plan-section">${esc(label)}</li>` : "";
+    if (label && label !== "쉬는 날") lastSection = label;
+    return head + dayRowHtml(d.day);
+  }).join("");
   $("#app").innerHTML = `
+    <div class="plan-head">
     <header class="top"><h1>전체 일정</h1><span class="date">${doneCount} / ${total()}일 완료</span></header>
     <div class="btn-row" style="margin-top:0">
       ${t >= 1 && t <= total() ? `<button class="btn secondary" data-action="jump-today">오늘로 이동</button>` : ""}
@@ -1101,8 +1110,18 @@ function renderPlan() {
     <p class="hint">${fixedPlan()
       ? "날짜를 누르면 그날 본문을 체크할 수 있어요. 맥체인 읽기표는 바꿀 수 없어요."
       : `날짜를 누르면 체크하거나 읽기 범위를 바꿀 수 있어요. ${forAll("바꾼 내용은 모두에게 적용돼요.")}`}</p>
-    <div class="card mt"><ul class="list">${S.plan.map((d) => dayRowHtml(d.day)).join("")}</ul></div>
+    </div>
+    <div class="card mt"><ul class="list">${rows}</ul></div>
     ${navHtml()}`;
+  // 일정 탭을 처음 열 때만 오늘로 이동한다(체크 등으로 다시 그릴 때는 그대로 둔다).
+  if (S.planJump) {
+    S.planJump = false;
+    requestAnimationFrame(() => jumpToday("auto"));
+  }
+}
+
+function jumpToday(behavior = "smooth") {
+  $(`#day-${todayDay()}`)?.scrollIntoView({ block: "center", behavior });
 }
 
 // ── 화면: 설정 ────────────────────────────────────────
@@ -1698,6 +1717,7 @@ document.addEventListener("click", async (ev) => {
   else if (a === "tab") {
     S.tab = el.dataset.tab;
     store.set("tab", S.tab);
+    S.planJump = S.tab === "plan";
     window.scrollTo(0, 0);
     render();
     if (S.tab === "together") loadMembers();
@@ -1706,7 +1726,7 @@ document.addEventListener("click", async (ev) => {
   } else if (a === "toggle-missed") { S.showAllMissed = !S.showAllMissed; render(); }
   else if (a === "open-day") openDay(Number(el.dataset.day));
   else if (a === "close-sheet") closeSheet();
-  else if (a === "jump-today") $(`#day-${todayDay()}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  else if (a === "jump-today") jumpToday();
   else if (a === "bulk-edit") openBulkEdit();
   else if (a === "history") openHistory();
   else if (a === "revert") revert(Number(el.dataset.id));
