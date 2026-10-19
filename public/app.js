@@ -133,7 +133,6 @@ async function loadState() {
   S.vapid = data.vapidPublicKey;
   S.chatUnread = data.chatUnread || 0;
   S.feedbackReplies = data.feedbackReplies || 0;
-  S.surveyDone = data.surveyDone !== false; // 일회용 설문 (예전 서버면 묻지 않음)
   S.checks = new Map(Object.entries(data.checks).map(([d, keys]) => [Number(d), new Set(keys)]));
   // 아직 서버에 저장 중인 체크는 불러온(이전) 상태로 덮어쓰지 않는다
   for (const [k, { day, key, checked }] of pendingChecks) applyCheck(day, key, checked);
@@ -458,9 +457,9 @@ async function saveCatchUp(mode) {
   } catch (e) { toast(e.message); }
 }
 
-// 기존 개인용 사용자에게 한 번 안내 (설문이 먼저, 다른 창이 있으면 다음에)
+// 기존 개인용 사용자에게 한 번 안내 (다른 창이 있으면 다음에)
 function autoCatchUpAsk() {
-  if (!personal() || fixedPlan() || S.catchUpAsked || !S.surveyDone) return;
+  if (!personal() || fixedPlan() || S.catchUpAsked) return;
   if (sheetOpen() && !$("#install-guide")) return; // 설치 안내보다는 먼저
   openCatchUp(true);
 }
@@ -1244,47 +1243,8 @@ function openStartDate() {
     </form>`);
 }
 
-// ── 일회용 설문: 평소 어떤 성경 앱을 쓰는지 (답할 때까지 앱을 열 때마다, 결과를 다 받으면 이 부분을 지운다) ──
+// 일회용 설문(평소 쓰는 성경 앱)은 끝났다. 모인 답은 관리자 탭 집계에서 본다.
 const SURVEY_OPTIONS = ["갓피플성경", "YouVersion 성경", "드라마바이블", "대한성서공회 앱·웹사이트", "웹사이트 검색(네이버 등)", "종이 성경", "기타"];
-let surveyPicked = new Set();
-let lastSurveyPopup = 0;
-function autoSurvey(onStart = false) {
-  if (!S.token || !S.loaded || S.surveyDone) return;
-  if (!onStart && Date.now() - lastSurveyPopup < 30 * 60000) return;
-  if (sheetOpen() && !$("#install-guide")) return; // 다른 창(체크·복구 코드 등)이 열려 있으면 다음에
-  lastSurveyPopup = Date.now();
-  openSurvey();
-}
-
-function openSurvey() {
-  openSheet(`<div id="survey">
-    <h3>잠깐 설문 하나만 🙏</h3>
-    <p class="muted" style="margin:0 0 12px">평소 성경을 어떤 앱·방법으로 읽으세요? (여러 개 고를 수 있어요)</p>
-    <form id="survey-form">
-      <div class="pick-chips">${SURVEY_OPTIONS.map((o) => `<button class="pchip ${surveyPicked.has(o) ? "on" : ""}" type="button" data-action="survey-pick" data-o="${esc(o)}">${esc(o)}</button>`).join("")}</div>
-      <input class="input ${surveyPicked.has("기타") ? "" : "hidden"}" name="other" maxlength="100" placeholder="어떤 앱·방법인지 적어 주세요">
-      <button class="btn block mt" type="submit">보내기</button>
-    </form></div>`);
-}
-
-async function submitSurvey(form) {
-  const other = form.other.value.trim();
-  if (!surveyPicked.size) { toast("하나 이상 골라 주세요."); return; }
-  if (surveyPicked.has("기타") && !other) { toast("기타에 어떤 것인지 적어 주세요."); return; }
-  const body = SURVEY_OPTIONS.filter((o) => surveyPicked.has(o)).map((o) => (o === "기타" ? `기타: ${other}` : o)).join(", ");
-  const btn = form.querySelector("button[type=submit]");
-  btn.disabled = true;
-  try {
-    await api("/feedback", { method: "POST", body: { kind: "survey", body } });
-    S.surveyDone = true;
-    closeSheet();
-    toast("고마워요! 앱을 만드는 데 참고할게요 🙏");
-  } catch (e) {
-    if (/이미/.test(e.message)) { S.surveyDone = true; closeSheet(); }
-    toast(e.message);
-    btn.disabled = false;
-  }
-}
 
 // 관리자: 설문 집계 (의견·제보 목록의 survey 답에서)
 function surveySummaryHtml() {
@@ -1756,12 +1716,6 @@ document.addEventListener("click", async (ev) => {
   else if (a === "read-days-save") saveReadDays(el);
   else if (a === "edit-me") openEditMe();
   else if (a === "fb-new") openFeedbackForm();
-  else if (a === "survey-pick") {
-    const o = el.dataset.o;
-    surveyPicked.has(o) ? surveyPicked.delete(o) : surveyPicked.add(o);
-    el.classList.toggle("on", surveyPicked.has(o));
-    $("#survey-form [name=other]")?.classList.toggle("hidden", !surveyPicked.has("기타"));
-  }
   else if (a === "fb-kind") { fbKind = el.dataset.kind; document.querySelectorAll('[data-action="fb-kind"]').forEach((b) => b.classList.toggle("on", b.dataset.kind === fbKind)); }
   else if (a === "fb-mine") openMyFeedback();
   else if (a === "fb-admin") openAdminFeedback(Number(el.dataset.id));
@@ -1847,7 +1801,6 @@ document.addEventListener("submit", async (ev) => {
   if (f.id === "admin-form") submitAdminCode(f);
   else if (f.id === "fb-form") submitFeedback(f);
   else if (f.id === "chat-edit-form") saveChatEdit(f);
-  else if (f.id === "survey-form") submitSurvey(f);
   else if (f.id === "fb-reply-form") {
     const reply = f.reply.value.trim();
     if (!reply) { toast("답변을 적어 주세요."); return; }
@@ -1889,7 +1842,7 @@ document.addEventListener("visibilitychange", () => {
     refresh();
     if (S.tab === "together") loadMembers();
   }
-  if (document.visibilityState === "visible") { autoSurvey(); autoInstallGuide(); } // 설문 → 설치 안내 (각각 간격 둠)
+  if (document.visibilityState === "visible") autoInstallGuide();
 });
 
 // ── 관리자 탭 (개인 모드, 설정 맨 아래 '관리자'에서 코드를 넣은 기기만) ─────────────
@@ -2058,7 +2011,6 @@ async function start() {
   }
   await detectPush().catch(() => {});
   render();
-  autoSurvey(true);
   autoCatchUpAsk();
   if (S.tab === "together") loadMembers();
   if (hasAdmin()) loadAdmin(); // 관리자 기기: 새 제보가 있으면 관리자 탭에 빨간 점

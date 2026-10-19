@@ -352,7 +352,6 @@ nav.tabs button { position: relative; }
 .fb-anon input { width: 20px; height: 20px; }
 .fb-reply { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; font-size: 14.5px; white-space: pre-wrap; }
 .hidden { display: none !important; }
-#survey .input { margin-top: 4px; }
 a.btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }
 /* 대화: 길게 누르기 (카톡처럼) */
 [data-lp] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: transform .15s, filter .15s; }
