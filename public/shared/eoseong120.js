@@ -198,3 +198,69 @@ export function abbrBook(item) {
   const abbr = String(item ?? "").replace(/[()]/g, "").trim().split(/\s+/)[0];
   return Object.hasOwn(BOOK_ABBR, abbr) ? BOOK_ABBR[abbr] : null;
 }
+
+// 개역개정 마지막 절: 원본에 필요한 장 경계만 둔다. 모르는 장 끝은 추정하지 않는다.
+const LAST_VERSE = {
+  눅: { 1: 80, 2: 52, 10: 42 },
+  요: { 1: 51, 2: 25, 3: 36, 10: 42 },
+  행: { 1: 26, 11: 30, 21: 40 },
+  출: { 4: 31 }, 민: { 20: 29 }, 대하: { 36: 23 }, 왕하: { 15: 38 }, 사: { 4: 6 },
+};
+const OLD_TESTAMENT = new Set(Object.keys(BOOK_ABBR).slice(0, 39)); // 위 약자 표는 정경 순서
+
+function chronoRange(item) {
+  const parenthesized = item.startsWith("(");
+  const text = item.replace(/[()]/g, "");
+  const [, book, range, unit] = text.match(/^(\S+)\s+(.+?)([장편])?$/);
+  const half = /[ab]/.test(range);
+  if (half) return { book, parenthesized, half, text: item.replaceAll("-", "~") };
+  const [first, last] = range.split("-");
+  const [chapter, verse = 1] = first.split(":").map(Number);
+  let endChapter = chapter, endVerse = first.includes(":") ? verse : null;
+  if (last !== undefined) {
+    if (last.includes(":")) [endChapter, endVerse] = last.split(":").map(Number);
+    else if (first.includes(":") && !unit) endVerse = Number(last);
+    else { endChapter = Number(last); endVerse = null; }
+  }
+  return { book, parenthesized, half, chapter, verse, endChapter, endVerse };
+}
+
+function chronoAdjacent(a, b) {
+  if (a.half || b.half || a.book !== b.book || a.parenthesized !== b.parenthesized) return false;
+  if (a.endChapter === b.chapter) return a.endVerse !== null && a.endVerse + 1 === b.verse;
+  return a.endChapter + 1 === b.chapter && b.verse === 1
+    && (a.endVerse === null || a.endVerse === LAST_VERSE[a.book]?.[a.endChapter]);
+}
+
+function chronoLabel(r) {
+  if (r.half) return r.text;
+  const unit = r.book === "시" ? "편" : "장";
+  const chapterEnd = r.endVerse === null || r.endVerse === LAST_VERSE[r.book]?.[r.endChapter];
+  let range;
+  if (r.verse === 1 && chapterEnd) {
+    range = `${r.chapter}${r.chapter === r.endChapter ? "" : `~${r.endChapter}`}${unit}`;
+  } else {
+    const first = `${r.chapter}:${r.verse}`;
+    const last = r.endVerse === null ? `${r.endChapter}${unit}`
+      : r.chapter === r.endChapter ? `${r.endVerse}` : `${r.endChapter}:${r.endVerse}`;
+    range = r.chapter === r.endChapter && r.verse === r.endVerse ? first : `${first}~${last}`;
+  }
+  const text = `${r.book} ${range}`;
+  return r.parenthesized ? `(${text})` : text;
+}
+
+// DAY와 무관하게 바로 이웃하며 끊김 없이 이어지는 본문만 합친다. 원본은 수정하지 않는다.
+export function chronoOrder(rows = EOSEONG120) {
+  const groups = [{ testament: "구약", items: [] }, { testament: "신약", items: [] }];
+  let previous;
+  for (const { items } of rows) for (const item of items) {
+    const next = chronoRange(item);
+    const ranges = groups[OLD_TESTAMENT.has(next.book) ? 0 : 1].items;
+    if (previous && chronoAdjacent(previous, next)) {
+      previous.endChapter = next.endChapter;
+      previous.endVerse = next.endVerse;
+    } else ranges.push(next);
+    previous = ranges.at(-1);
+  }
+  return groups.map(({ testament, items }) => ({ testament, items: items.map(chronoLabel) }));
+}
