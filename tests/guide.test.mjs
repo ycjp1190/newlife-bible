@@ -30,3 +30,13 @@ test("책의 구간은 어성경에서 실제로 그 책이 나오는 구간이�
 test("구간의 책 이름은 정경 책 이름으로 시작한다", () => {
   for (const e of ERAS) for (const b of e.books) assert.ok(CANON.some((n) => b === n || b.startsWith(`${n} `)), `${e.title}: ${b}`);
 });
+
+test("66권 분류와 '교회' 구간 묶음이 빠짐·겹침 없이 맞다", async () => {
+  const { BOOK_GROUPS } = await import("../public/shared/guide.js");
+  const all = BOOK_GROUPS.flatMap(([, , b]) => b);
+  assert.deepEqual(all, CANON);
+  assert.equal(BOOK_GROUPS.find(([, t]) => t === "바울서신")[2].length, 13);
+  const church = ERAS.find((e) => e.title === "교회");
+  const grouped = church.groups.flatMap((g) => g.books);
+  assert.deepEqual([...grouped].sort(), [...church.books].sort());
+});

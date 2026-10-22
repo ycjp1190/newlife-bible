@@ -4,7 +4,7 @@ import {
   MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
-import { BOOK_GUIDE, CANON, ERAS } from "./shared/guide.js";
+import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS } from "./shared/guide.js";
 import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
 import {
@@ -1147,14 +1147,17 @@ function renderGuide() {
     return b ? `<button class="gbook" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(text)}</button>` : `<span class="gbook">${esc(text)}</span>`;
   };
   const body = view === "books"
-    ? [["구약", CANON.slice(0, 39)], ["신약", CANON.slice(39)]].map(([t, books]) => `<h2 class="section">${t} <small>${books.length}권</small></h2>
-        <div class="card gbooks">${books.map(bookBtn).join("")}</div>`).join("")
-    : `<p class="hint">「어? 성경이 읽어지네!」 시간 순서의 큰 구간이에요. 누르면 펼쳐지고, 책 이름을 누르면 배경을 볼 수 있어요.</p>
+    ? ["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
+        <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>
+          <div class="gbooks">${books.map(bookBtn).join("")}</div>`).join("")}</div>`).join("")
+    : `<p class="hint">「어? 성경이 읽어지네!」 읽기 순서의 큰 구간이에요. 사건이 일어난 순서나 지금 고른 읽기 계획과 다를 수 있어요. 누르면 펼쳐지고, 책 이름을 누르면 배경을 볼 수 있어요.</p>
       <ol class="eras">${ERAS.map((e, i) => `<li class="card era"><details>
         <summary><span class="era-no">${String(i + 1).padStart(2, "0")}</span><span class="era-t"><b>${esc(e.title)}</b><small>${esc(e.years)}</small></span></summary>
         <p>${esc(e.summary)}</p>
         ${e.people?.length ? `<p class="era-people">${e.people.map((x) => `<span class="chip">${esc(x)}</span>`).join(" ")}</p>` : ""}
-        <div class="gbooks">${e.books.map(bookBtn).join("")}</div>
+        ${e.groups ? e.groups.map((g) => `<div class="egroup"><h3 class="ggroup-t">${esc(g.title)} <small>${esc(g.years)}</small></h3>
+          <p>${esc(g.summary)}</p><div class="gbooks">${g.books.map(bookBtn).join("")}</div></div>`).join("")
+          : `<div class="gbooks">${e.books.map(bookBtn).join("")}</div>`}
       </details></li>`).join("")}</ol>`;
   $("#app").innerHTML = `
     <header class="top"><h1>성경 길잡이</h1></header>
@@ -1172,7 +1175,7 @@ function openBookGuide(name) {
   openSheet(`<div class="book-guide">
     <h3>${esc(name)}</h3>
     ${g.eras?.length ? `<p class="era-people">${g.eras.map((t) => `<span class="chip">${String(eraNo(t)).padStart(2, "0")} · ${esc(t)}</span>`).join(" ")}</p>` : ""}
-    <dl>${row("시대", g.years)}${row("저자", g.author)}${row("처음 읽은 사람", g.audience)}${row("핵심 메시지", g.message)}</dl>
+    <dl>${row("시대", g.years)}${row("저자", g.author)}${row("독자와 배경", g.audience)}${row("핵심 메시지", g.message)}</dl>
     ${g.tips?.length ? `<h4>알아 두면 좋아요</h4><ul class="g-tips">${g.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
     <button class="btn secondary block mt" data-action="close-sheet">닫기</button>
   </div>`);
