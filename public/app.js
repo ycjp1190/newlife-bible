@@ -1243,24 +1243,7 @@ function openStartDate() {
     </form>`);
 }
 
-// 일회용 설문(평소 쓰는 성경 앱)은 끝났다. 모인 답은 관리자 탭 집계에서 본다.
-const SURVEY_OPTIONS = ["갓피플성경", "YouVersion 성경", "드라마바이블", "대한성서공회 앱·웹사이트", "웹사이트 검색(네이버 등)", "종이 성경", "기타"];
-
-// 관리자: 설문 집계 (의견·제보 목록의 survey 답에서)
-function surveySummaryHtml() {
-  const answers = (S.admin?.fb || []).filter((f) => f.kind === "survey");
-  if (!answers.length) return "";
-  const count = new Map(SURVEY_OPTIONS.map((o) => [o, 0]));
-  const others = [];
-  for (const a of answers) {
-    for (const part of a.body.split(", ")) {
-      if (part.startsWith("기타: ")) { count.set("기타", count.get("기타") + 1); others.push(part.slice(4)); } else if (count.has(part)) count.set(part, count.get(part) + 1);
-    }
-  }
-  return `<h2 class="section">설문: 쓰는 성경 앱 <small>${answers.length}명 응답</small></h2>
-    <div class="card"><p class="mm-months" style="margin:0">${[...count].filter(([, n]) => n).sort((x, y) => y[1] - x[1]).map(([o, n]) => `<span class="chip">${esc(o)} ${n}</span>`).join(" ")}</p>
-    ${others.length ? `<p class="hint">기타: ${others.map(esc).join(" · ")}</p>` : ""}</div>`;
-}
+// 일회용 설문(평소 쓰는 성경 앱)은 끝났다. 답(feedback kind='survey')은 DB에만 남기고 화면에는 보이지 않는다.
 
 // ── 의견·제보 ──
 let fbKind = "bug";
@@ -1930,8 +1913,8 @@ const fbStatusChip = (st) => `<span class="chip ${FB_STATUS[st]?.[1] || ""}">${F
 const fbDate = (iso) => niceDate(kstDateOf(iso));
 
 function adminFeedbackHtml() {
-  const list = S.admin.fb || [];
-  return `${surveySummaryHtml()}<h2 class="section">의견·제보 ${S.admin.newCount ? `<small class="chip warn">새 ${S.admin.newCount}</small>` : ""}</h2>
+  const list = (S.admin.fb || []).filter((f) => f.kind !== "survey");
+  return `<h2 class="section">의견·제보 ${S.admin.newCount ? `<small class="chip warn">새 ${S.admin.newCount}</small>` : ""}</h2>
     <ul class="card list">${list.length ? list.map((f) => `<li><button class="row" data-action="fb-admin" data-id="${f.id}" style="align-items:flex-start">
       <span class="main"><span class="title" style="white-space:pre-wrap">${esc(f.body.length > 90 ? f.body.slice(0, 90) + "…" : f.body)}</span>
       <span class="sub">${esc(f.name)} · ${FB_KIND[f.kind] || f.kind} · ${fbDate(f.createdAt)}${f.reply ? " · 💬 답변함" : ""}</span></span>
