@@ -5,6 +5,7 @@ import {
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
 import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS } from "./shared/guide.js";
+import { abbrBook, EOSEONG120 } from "./shared/eoseong120.js";
 import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
 import {
@@ -1134,19 +1135,30 @@ function jumpToday(behavior = "smooth") {
   $(`#day-${todayDay()}`)?.scrollIntoView({ block: "center", behavior });
 }
 
-// ── 화면: 성경 길잡이 (어성경 순서의 큰 흐름, 66권 배경) ──
+// ── 화면: 성경 길잡이 (큰 흐름, 66권 배경, 120일 시간 순서) ──
 // "출애굽기 1~4장" → "출애굽기"
 const guideBookOf = (text) => CANON.find((b) => text === b || text.startsWith(`${b} `)) || null;
 
 function renderGuide() {
   const view = S.guideView || store.get("guideView") || "flow";
-  const tabsHtml = `<div class="pick-chips">${[["flow", "전체 흐름"], ["books", "66권 배경"]].map(([v, label]) =>
-    `<button class="pchip ${view === v ? "on" : ""}" type="button" data-action="guide-view" data-view="${v}">${label}</button>`).join("")}</div>`;
+  const tabsHtml = `<div class="pick-chips guide-views">${[["flow", "전체 흐름"], ["books", "66권 배경"], ["order", "시간 순서"]].map(([v, label]) =>
+    `<button class="pchip ${view === v ? "on" : ""}" type="button" data-action="guide-view" data-view="${esc(v)}">${esc(label)}</button>`).join("")}</div>`;
   const bookBtn = (text) => {
     const b = guideBookOf(text);
     return b ? `<button class="gbook" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(text)}</button>` : `<span class="gbook">${esc(text)}</span>`;
   };
-  const body = view === "books"
+  const orderBtn = (item) => {
+    const b = abbrBook(item);
+    const cls = `gbook gorder-chip${item.startsWith("(") ? " muted" : ""}`;
+    return b ? `<button class="${cls}" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(item)}</button>` : `<span class="${cls}">${esc(item)}</span>`;
+  };
+  const body = view === "order"
+    ? `<p class="hint">${esc("「어성경 핸드북」 120일 읽기표의 순서예요. 괄호 표기는 핸드북 그대로예요. 본문을 누르면 그 책의 배경을 볼 수 있어요.")}</p>
+      ${[["구약", 1, 94], ["신약", 95, 120]].map(([title, first, last]) => `<h2 class="section">${esc(title)} <small>${esc(`DAY ${first}~${last}`)}</small></h2>
+        <ol class="gorder">${EOSEONG120.filter(({ day }) => day >= first && day <= last).map(({ day, items }) => `<li class="card gorder-day">
+          <b class="gorder-no">${esc(`DAY ${day}`)}</b><div class="gbooks gorder-items">${items.map(orderBtn).join("")}</div>
+        </li>`).join("")}</ol>`).join("")}`
+    : view === "books"
     ? ["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
         <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>
           <div class="gbooks">${books.map(bookBtn).join("")}</div>`).join("")}</div>`).join("")
