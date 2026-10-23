@@ -396,10 +396,17 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .era-people { display: flex; flex-wrap: wrap; gap: 6px; }
 .gbooks { display: flex; flex-wrap: wrap; gap: 8px; }
 .gbook { border: 1.5px solid var(--line); background: var(--bg); color: inherit; border-radius: 10px; padding: 7px 11px; font-size: 14.5px; }
-.gorder { padding: 12px; }
-.gorder-items { gap: 5px; }
-.gorder-chip { padding: 5px 7px; font-size: 12.5px; max-width: 100%; overflow-wrap: anywhere; }
-.gorder-chip.muted { color: var(--muted); }
+.gorder-timeline { list-style: none; margin: 24px 0 0 6px; padding: 0 0 0 20px; border-left: 2px solid var(--line); }
+.gorder-era { position: relative; padding-bottom: 32px; min-width: 0; overflow-wrap: anywhere; }
+.gorder-era:last-child { padding-bottom: 0; }
+.gorder-era::before { content: ""; position: absolute; left: -26px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.gorder-title { margin: 0; font-size: 17px; font-weight: 700; }
+.gorder-years { margin: 4px 0 16px; font-size: 12.5px; color: var(--muted); }
+.gorder-row + .gorder-row { margin-top: 14px; }
+.gorder-main { font-size: 16px; font-weight: 600; }
+.gorder-also { margin: 4px 0 0 14px; font-size: 14px; color: var(--muted); line-height: 1.7; }
+.gorder-ref { border: 0; background: none; padding: 0; color: inherit; font: inherit; text-align: left; text-decoration: none; max-width: 100%; overflow-wrap: anywhere; }
+.gorder-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 .book-guide dl { margin: 12px 0 0; }
 .book-guide .g-row { padding: 10px 0; border-top: 1px solid var(--line); }
 .book-guide dt { font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }

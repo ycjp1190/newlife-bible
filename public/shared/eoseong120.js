@@ -1,6 +1,9 @@
 // 출처: 「어성경 핸드북」 120 DAY 성경 순서 및 목차, 16~19쪽
 // 문자열은 핸드북 표기 그대로, 고치지 말 것
 
+import { EOSEONG } from "./eoseong.js";
+import { ERAS } from "./guide.js";
+
 export const EOSEONG120 = [
   {"day":1,"items":["창 1-11장"]},
   {"day":2,"items":["창 12-24장"]},
@@ -199,6 +202,13 @@ export function abbrBook(item) {
   return Object.hasOwn(BOOK_ABBR, abbr) ? BOOK_ABBR[abbr] : null;
 }
 
+// 화면에서는 괄호 대신 들여쓰기로 구별하고, 책 이름은 약자를 풀어 쓴다.
+export function fullRef(item) {
+  const text = String(item ?? "").replace(/[()]/g, "").trim();
+  const book = abbrBook(text);
+  return book ? text.replace(/^\S+/, book) : text;
+}
+
 // 개역개정 마지막 절: 원본에 필요한 장 경계만 둔다. 모르는 장 끝은 추정하지 않는다.
 const LAST_VERSE = {
   눅: { 1: 80, 2: 52, 10: 42 },
@@ -263,4 +273,34 @@ export function chronoOrder(rows = EOSEONG120) {
     previous = ranges.at(-1);
   }
   return groups.map(({ testament, items }) => ({ testament, items: items.map(chronoLabel) }));
+}
+
+// 큰 줄기는 끝 장으로, 함께 읽기는 시작 장으로 구간을 판정한다.
+function chronoEra(item) {
+  const range = chronoRange(item.replaceAll("~", "-").replace(/(\d)[ab]/g, "$1"));
+  const chapter = range.parenthesized
+    ? Number(item.match(/\d+/)[0]) : range.endChapter;
+  const book = abbrBook(item);
+  return EOSEONG.findIndex(([, units]) => units.some((unit) => typeof unit === "string"
+    ? unit === book : unit[0] === book && unit[1] <= chapter && chapter <= unit[2]));
+}
+
+// 핸드북 전체의 큰 줄기 유무를 확인하며, 구간과 본문 순서는 뒤로 돌아가지 않는다.
+export function chronoTimeline() {
+  const sections = ERAS.map(({ title, years }) => ({ title, years, rows: [] }));
+  const mainEras = new Set(EOSEONG120.flatMap(({ items }) => items)
+    .filter((item) => !item.startsWith("(")).map(chronoEra));
+  let current = -1;
+  for (const { items } of chronoOrder()) for (const item of items) {
+    const era = chronoEra(item);
+    const also = item.startsWith("(");
+    // 괄호만 있는 구간은 함께 읽기로도 진입하고, 나머지는 앞 줄기에 붙인다.
+    if (current < 0 || era > current && (!also || !mainEras.has(era))) current = era;
+    const rows = sections[current].rows;
+    if (also) {
+      if (!rows.length) rows.push({ main: null, also: [] });
+      rows.at(-1).also.push(item);
+    } else rows.push({ main: item, also: [] });
+  }
+  return sections.filter(({ rows }) => rows.length);
 }

@@ -7,7 +7,7 @@ import { runInNewContext } from "node:vm";
 import { BOOK_NAMES } from "../public/shared/bible.js";
 import { EOSEONG } from "../public/shared/eoseong.js";
 import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS } from "../public/shared/guide.js";
-import { abbrBook, BOOK_ABBR, chronoOrder, EOSEONG120 } from "../public/shared/eoseong120.js";
+import { abbrBook, BOOK_ABBR, chronoOrder, chronoTimeline, EOSEONG120, fullRef } from "../public/shared/eoseong120.js";
 
 test("120일 읽기표는 DAY 1~120, 본문 462개이며 확정 원본의 문자열·순서를 보존한다", () => {
   assert.deepEqual(EOSEONG120.map(({ day }) => day), Array.from({ length: 120 }, (_, i) => i + 1));
@@ -139,7 +139,59 @@ test("결과의 구성 원소는 원본 462개를 순서·범위·괄호·반절
   assert.equal(counts.reduce((sum, n) => sum + n, 0), 462);
 });
 
-test("시간 순서 화면은 구약·신약 카드와 배경 버튼만 표시하며 DAY 안내를 제거한다", () => {
+test("타임라인은 전체 병합 항목의 순서를 보존하고 구간을 앞으로만 진행한다", () => {
+  const timeline = chronoTimeline();
+  assert.equal(timeline.length, 12);
+  assert.deepEqual(timeline.map(({ title }) => title), ERAS.map(({ title }) => title));
+  const flattened = timeline.flatMap(({ rows }) => rows.flatMap(({ main, also }) => main === null ? also : [main, ...also]));
+  assert.deepEqual(flattened, chronoOrder().flatMap(({ items }) => items));
+  let previous = -1;
+  for (const { title, years, rows } of timeline) {
+    const era = ERAS.findIndex((e) => e.title === title);
+    assert.ok(era > previous, title);
+    assert.equal(years, ERAS[era].years);
+    assert.ok(rows.length, title);
+    for (const { main, also } of rows) {
+      assert.ok(main === null || !main.startsWith("("));
+      assert.ok(also.every((item) => item.startsWith("(")));
+    }
+    previous = era;
+  }
+  assert.equal(timeline[0].title, "시작과 족장");
+  assert.equal(timeline[0].rows[0].main, "창 1~50장");
+  assert.deepEqual(timeline[0].rows, [{ main: "창 1~50장", also: [] }]);
+  assert.equal(timeline[1].title, "출애굽과 광야");
+  assert.equal(timeline[1].rows[0].main, "출 1~40장");
+  assert.deepEqual(timeline.find((e) => e.title === "포로기").rows, [
+    { main: null, also: ["(단 1~12장)", "(겔 1~48장)"] },
+  ]);
+  assert.deepEqual(timeline.find((e) => e.title === "욥기").rows, [
+    { main: null, also: ["(욥 1~42장)"] },
+  ]);
+  const united = timeline.find((e) => e.title === "통일왕국");
+  assert.deepEqual(united.rows.find(({ main }) => main === "삼상 21장"), {
+    main: "삼상 21장", also: ["(시 34편)", "(시 56편)"],
+  });
+  const chronicles = timeline.find((e) => e.title === ERAS[6].title);
+  assert.equal(chronicles.rows[0].main, "대상 1~16장");
+  // 역대기 구간의 시편도 앞서 나와 통일왕국에서 구간을 넘기지 않는다.
+  assert.ok(united.rows.find(({ main }) => main === "삼상 24장").also.includes("(시 142편)"));
+  assert.deepEqual(chronicles.rows[0].also, ["(시 105편)", "(시 73~89편)"]);
+  // 사도행전 뒤에 나오는 복음서도 구간을 되돌리지 않는다.
+  const church = timeline.find((e) => e.title === "교회");
+  assert.deepEqual(church.rows.slice(0, 2).map(({ main }) => main), ["행 1:1~11", "마 28:16~20"]);
+  assert.equal(timeline.at(-1).title, "새 하늘과 새 땅");
+  assert.deepEqual(chronoTimeline(), timeline);
+});
+
+test("본문의 전체 책 이름 표시는 괄호만 빼고 범위·반절·장/편을 보존한다", () => {
+  assert.equal(fullRef("(렘 46:1~49:33)"), "예레미야 46:1~49:33");
+  assert.equal(fullRef("눅 3:21~23a"), "누가복음 3:21~23a");
+  assert.equal(fullRef("삼상 21장"), "사무엘상 21장");
+  assert.equal(fullRef("(시 34편)"), "시편 34편");
+});
+
+test("시간 순서 화면은 연대 타임라인·큰 줄기·함께 읽기와 전체 책 이름의 배경 버튼을 표시한다", () => {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const guide = source.slice(source.indexOf("const guideBookOf ="), source.indexOf("// ── 화면: 설정"));
   for (const mode of ["group", "personal"]) {
@@ -148,17 +200,22 @@ test("시간 순서 화면은 구약·신약 카드와 배경 버튼만 표시�
     runInNewContext(`${guide}\nrenderGuide(); openBookGuide(abbrBook("(눅 3:23b~38)"));`, {
       S: { mode }, store: { get: () => "order" }, $: () => app,
       esc: (value) => String(value), navHtml: () => "", openSheet: (html) => { sheet = html; },
-      CANON, BOOK_GROUPS, BOOK_GUIDE, ERAS, abbrBook, chronoOrder,
+      CANON, BOOK_GROUPS, BOOK_GUIDE, ERAS, abbrBook, chronoTimeline, fullRef,
     });
-    assert.match(app.innerHTML, /「어성경 핸드북」의 시간 순서예요\. 괄호 표기는 핸드북 그대로예요\. 본문을 누르면 그 책의 배경을 볼 수 있어요\./);
-    assert.doesNotMatch(app.innerHTML, /DAY|120일|gorder-day|gorder-no|›/);
-    assert.equal((app.innerHTML.match(/class="card gorder"/g) || []).length, 2);
-    assert.match(app.innerHTML, /<h2 class="section">구약<\/h2>/);
-    assert.match(app.innerHTML, /<h2 class="section">신약<\/h2>/);
-    for (const item of chronoOrder().flatMap((g) => g.items)) {
-      const cls = `gbook gorder-chip${item.startsWith("(") ? " muted" : ""}`;
-      assert.ok(app.innerHTML.includes(`<button class="${cls}" type="button" data-action="book-guide" data-book="${abbrBook(item)}">${item}</button>`), item);
+    assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 굵은 줄은 이야기의 큰 줄기, 들여 쓴 '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서 본문이에요. 본문을 누르면 그 책의 배경을 볼 수 있어요."));
+    assert.doesNotMatch(app.innerHTML, /DAY|120일|gorder-chip|gorder-items|괄호 표기|›/);
+    assert.match(app.innerHTML, /<ol class="gorder-timeline">/);
+    assert.equal((app.innerHTML.match(/class="gorder-era"/g) || []).length, chronoTimeline().length);
+    for (const { title, years } of chronoTimeline()) {
+      const no = String(ERAS.findIndex((e) => e.title === title) + 1).padStart(2, "0");
+      assert.ok(app.innerHTML.includes(`<h2 class="gorder-title">${no} · ${title}</h2>`));
+      assert.ok(app.innerHTML.includes(`<p class="gorder-years">${years}</p>`));
     }
+    for (const item of chronoOrder().flatMap((g) => g.items)) {
+      assert.ok(app.innerHTML.includes(`<button class="gorder-ref" type="button" data-action="book-guide" data-book="${abbrBook(item)}">${fullRef(item)}</button>`), item);
+    }
+    assert.equal((app.innerHTML.match(/data-action="book-guide"/g) || []).length, chronoOrder().flatMap((g) => g.items).length);
+    assert.match(app.innerHTML, /class="gorder-main">.*사무엘상 21장<\/button><\/div>\s*<div class="gorder-also">함께 읽기 · .*시편 34편<\/button>, .*시편 56편<\/button><\/div>/);
     assert.match(sheet, /<h3>누가복음<\/h3>/);
   }
 });

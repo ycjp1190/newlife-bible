@@ -5,7 +5,7 @@ import {
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
 import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS } from "./shared/guide.js";
-import { abbrBook, chronoOrder } from "./shared/eoseong120.js";
+import { abbrBook, chronoTimeline, fullRef } from "./shared/eoseong120.js";
 import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
 import {
@@ -1149,13 +1149,18 @@ function renderGuide() {
   };
   const orderBtn = (item) => {
     const b = abbrBook(item);
-    const cls = `gbook gorder-chip${item.startsWith("(") ? " muted" : ""}`;
-    return b ? `<button class="${cls}" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(item)}</button>` : `<span class="${cls}">${esc(item)}</span>`;
+    return `<button class="gorder-ref" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(fullRef(item))}</button>`;
   };
   const body = view === "order"
-    ? `<p class="hint">${esc("「어성경 핸드북」의 시간 순서예요. 괄호 표기는 핸드북 그대로예요. 본문을 누르면 그 책의 배경을 볼 수 있어요.")}</p>
-      ${chronoOrder().map(({ testament, items }) => `<h2 class="section">${esc(testament)}</h2>
-        <div class="card gorder"><div class="gbooks gorder-items">${items.map(orderBtn).join("")}</div></div>`).join("")}`
+    ? `<p class="hint">${esc("「어성경 핸드북」의 시간 순서예요. 굵은 줄은 이야기의 큰 줄기, 들여 쓴 '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서 본문이에요. 본문을 누르면 그 책의 배경을 볼 수 있어요.")}</p>
+      <ol class="gorder-timeline">${chronoTimeline().map(({ title, years, rows }) => `<li class="gorder-era">
+        <h2 class="gorder-title">${String(ERAS.findIndex((e) => e.title === title) + 1).padStart(2, "0")} · ${esc(title)}</h2>
+        <p class="gorder-years">${esc(years)}</p>
+        ${rows.map(({ main, also }) => `<div class="gorder-row">
+          ${main ? `<div class="gorder-main">${orderBtn(main)}</div>` : ""}
+          ${also.length ? `<div class="gorder-also">함께 읽기 · ${also.map(orderBtn).join(", ")}</div>` : ""}
+        </div>`).join("")}
+      </li>`).join("")}</ol>`
     : view === "books"
     ? ["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
         <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>
