@@ -4,7 +4,7 @@ import {
   MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
-import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS } from "./shared/guide.js";
+import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS, CHRONO_PARTS } from "./shared/guide.js";
 import { abbrBook, chronoTimeline, fullRef } from "./shared/eoseong120.js";
 import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
@@ -1139,6 +1139,25 @@ function jumpToday(behavior = "smooth") {
 // "출애굽기 1~4장" → "출애굽기"
 const guideBookOf = (text) => CANON.find((b) => text === b || text.startsWith(`${b} `)) || null;
 
+// 시대 순서대로 이어지는 색: 흰 번호 글자와 대비를 유지한다.
+const GORDER_COLORS = [
+  "#a65343", "#a65c2b", "#8c692a", "#72712f", "#537647", "#347764",
+  "#2e7580", "#3f6f9c", "#546395", "#715b91", "#8b537f", "#9a4e68",
+];
+
+// 시간 순서 보기: 연대 미상인 욥기는 따로 두지 않고 '시작과 족장'의 함께 읽기로 붙인다(운영자 지시).
+function orderEras() {
+  const timeline = chronoTimeline();
+  const job = timeline.find((e) => e.title === "욥기");
+  const eras = timeline.filter((e) => e !== job);
+  if (!job) return eras;
+  const [first] = eras;
+  const last = first.rows.at(-1);
+  const extra = job.rows.flatMap(({ main, also }) => [main, ...also].filter(Boolean));
+  eras[0] = { ...first, rows: [...first.rows.slice(0, -1), { ...last, also: [...last.also, ...extra] }] };
+  return eras;
+}
+
 function renderGuide() {
   const view = S.guideView || store.get("guideView") || "flow";
   const tabsHtml = `<div class="pick-chips guide-views">${[["flow", "전체 흐름"], ["books", "66권 배경"], ["order", "시간 순서"]].map(([v, label]) =>
@@ -1151,16 +1170,34 @@ function renderGuide() {
     const b = abbrBook(item);
     return `<button class="gorder-ref" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(fullRef(item))}</button>`;
   };
+  const orderRows = (rows) => rows.map(({ main, also }) => `<div class="gorder-row">
+    ${main ? `<div class="gorder-main">${orderBtn(main)}</div>` : ""}
+    ${also.length ? `<div class="gorder-also"><span class="gorder-also-label">함께 읽기</span><ul class="gorder-also-list">${also.map((item) => `<li>${orderBtn(item)}</li>`).join("")}</ul></div>` : ""}
+  </div>`).join("");
+  const orderCounts = (rows) => {
+    const main = rows.filter((row) => row.main).length;
+    const also = rows.reduce((n, row) => n + row.also.length, 0);
+    return [main ? `큰 줄기 ${main}` : "", also ? `함께 읽기 ${also}` : ""].filter(Boolean).join(" · ");
+  };
   const body = view === "order"
-    ? `<p class="hint">${esc("「어성경 핸드북」의 시간 순서예요. 굵은 줄은 이야기의 큰 줄기, 들여 쓴 '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서 본문이에요. 본문을 누르면 그 책의 배경을 볼 수 있어요.")}</p>
-      <ol class="gorder-timeline">${chronoTimeline().map(({ title, years, rows }) => `<li class="gorder-era">
-        <h2 class="gorder-title">${String(ERAS.findIndex((e) => e.title === title) + 1).padStart(2, "0")} · ${esc(title)}</h2>
-        <p class="gorder-years">${esc(years)}</p>
-        ${rows.map(({ main, also }) => `<div class="gorder-row">
-          ${main ? `<div class="gorder-main">${orderBtn(main)}</div>` : ""}
-          ${also.length ? `<div class="gorder-also">함께 읽기 · ${also.map(orderBtn).join(", ")}</div>` : ""}
-        </div>`).join("")}
-      </li>`).join("")}</ol>`
+    ? `<p class="hint">${esc("「어성경 핸드북」의 시간 순서예요. 왼쪽 연대는 대략적인 연도예요. 시대를 누르면 펼쳐져요. 굵은 줄은 이야기의 큰 줄기이고, '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서예요. 본문을 누르면 그 책의 배경을 볼 수 있어요.")}</p>
+      <ol class="gorder-timeline">${orderEras().map(({ title, years, rows }, i) => {
+        const era = ERAS.find((e) => e.title === title);
+        const parts = CHRONO_PARTS[title];
+        const starts = parts?.map(({ from }) => rows.findIndex(({ main }) => main === from));
+        const content = parts ? parts.map((part, j) => {
+          const sectionRows = rows.slice(starts[j], starts[j + 1] ?? rows.length);
+          return `<details class="gorder-part"><summary><span class="gorder-part-title">${esc(part.title)}</span><span class="gorder-count">${orderCounts(sectionRows)}</span></summary><div class="gorder-part-body">${orderRows(sectionRows)}</div></details>`;
+        }).join("") : orderRows(rows);
+        return `<li class="gorder-era" style="--c:${GORDER_COLORS[i]}">
+          <span class="gorder-years" aria-label="${esc(years)}">${era.yearsShort.map(esc).join("<br>")}</span>
+          <span class="gorder-node" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span>
+          <details class="gorder-fold">
+            <summary><h2 class="gorder-title">${esc(title)}</h2><span class="gorder-count">${orderCounts(rows)}</span></summary>
+            <div class="gorder-body">${content}</div>
+          </details>
+        </li>`;
+      }).join("")}</ol>`
     : view === "books"
     ? ["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
         <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>

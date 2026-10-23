@@ -396,17 +396,45 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .era-people { display: flex; flex-wrap: wrap; gap: 6px; }
 .gbooks { display: flex; flex-wrap: wrap; gap: 8px; }
 .gbook { border: 1.5px solid var(--line); background: var(--bg); color: inherit; border-radius: 10px; padding: 7px 11px; font-size: 14.5px; }
-.gorder-timeline { list-style: none; margin: 24px 0 0 6px; padding: 0 0 0 20px; border-left: 2px solid var(--line); }
-.gorder-era { position: relative; padding-bottom: 32px; min-width: 0; overflow-wrap: anywhere; }
+.gorder-timeline { list-style: none; margin: 24px 0 0; padding: 0; }
+/* 360px: 328px content = 60px years + 30px rail + two 8px gaps + 222px bubble. */
+.gorder-era { position: relative; display: grid; grid-template-columns: 60px 30px minmax(0, 1fr); column-gap: 8px; padding: 0 0 12px; min-width: 0; overflow-wrap: anywhere; }
+.gorder-era::before { content: ""; position: absolute; left: 80px; top: 0; width: 6px; height: 100%; background: var(--c); }
 .gorder-era:last-child { padding-bottom: 0; }
-.gorder-era::before { content: ""; position: absolute; left: -26px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
-.gorder-title { margin: 0; font-size: 17px; font-weight: 700; }
-.gorder-years { margin: 4px 0 16px; font-size: 12.5px; color: var(--muted); }
-.gorder-row + .gorder-row { margin-top: 14px; }
-.gorder-main { font-size: 16px; font-weight: 600; }
-.gorder-also { margin: 4px 0 0 14px; font-size: 14px; color: var(--muted); line-height: 1.7; }
-.gorder-ref { border: 0; background: none; padding: 0; color: inherit; font: inherit; text-align: left; text-decoration: none; max-width: 100%; overflow-wrap: anywhere; }
-.gorder-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.gorder-node { position: relative; z-index: 1; grid-column: 2; grid-row: 1; margin-top: 14px; width: 30px; height: 30px; box-sizing: border-box; display: grid; place-items: center; border: 3px solid var(--bg); border-radius: 50%; background: var(--c); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gorder-fold { grid-column: 3; grid-row: 1; position: relative; min-width: 0; border: 1.5px solid var(--line); border-color: color-mix(in srgb, var(--c) 35%, var(--line)); border-radius: 16px; background: var(--card); background: color-mix(in srgb, var(--c) 9%, var(--card)); }
+.gorder-fold::before { content: ""; position: absolute; left: -7px; top: 23px; width: 12px; height: 12px; transform: rotate(45deg); background: var(--card); background: color-mix(in srgb, var(--c) 9%, var(--card)); border: solid var(--line); border-color: color-mix(in srgb, var(--c) 35%, var(--line)); border-width: 0 0 1.5px 1.5px; }
+.gorder-fold > summary { position: relative; padding: 14px 26px 12px 12px; cursor: pointer; }
+.gorder-fold > summary, .gorder-part > summary { list-style: none; }
+.gorder-fold > summary::-webkit-details-marker, .gorder-part > summary::-webkit-details-marker { display: none; }
+.gorder-fold > summary::after, .gorder-part > summary::after { content: ""; position: absolute; width: 7px; height: 7px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.gorder-fold > summary::after { right: 15px; top: 30px; }
+.gorder-fold[open] > summary::after, .gorder-part[open] > summary::after { transform: rotate(45deg); }
+.gorder-years { grid-column: 1; grid-row: 1; margin-top: 20px; text-align: right; white-space: nowrap; line-height: 1.4; color: var(--c); font-size: 12px; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .gorder-years { color: color-mix(in srgb, var(--c) 60%, white); }
+}
+:root[data-theme="dark"] .gorder-years { color: color-mix(in srgb, var(--c) 60%, white); }
+.gorder-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+.gorder-count { display: block; font-size: 12px; color: var(--muted); }
+.gorder-body { padding: 0 10px 10px; }
+.gorder-row + .gorder-row { margin-top: 2px; }
+.gorder-main { position: relative; padding-left: 14px; font-size: 16px; font-weight: 600; }
+.gorder-main::before { content: ""; position: absolute; left: 0; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.gorder-also { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 6px 14px; padding-left: 8px; border-left: 1px dashed var(--line); border-color: color-mix(in srgb, var(--c) 50%, var(--line)); color: var(--muted); }
+.gorder-also-label { margin-right: 2px; font-size: 12px; }
+.gorder-part { min-width: 0; background: color-mix(in srgb, var(--c) 6%, var(--card)); border-radius: 8px; }
+.gorder-part + .gorder-part { margin-top: 4px; }
+.gorder-part > summary { position: relative; padding: 10px 22px 10px 8px; cursor: pointer; }
+.gorder-part > summary::after { right: 9px; top: 17px; width: 6px; height: 6px; }
+.gorder-part-title { display: block; font-size: 15px; font-weight: 600; }
+.gorder-part-body { padding: 0 8px 6px; }
+.gorder-also-list { list-style: none; display: contents; font-size: 13.5px; }
+.gorder-also-list .gorder-ref { width: auto; min-height: 32px; padding: 4px 9px; font-size: 13.5px; border-radius: 10px; background: var(--bg); background: color-mix(in srgb, var(--c) 7%, var(--bg)); }
+.gorder-ref { display: block; width: 100%; border: 0; background: none; padding: 6px 0; min-height: 40px; color: inherit; font: inherit; text-align: left; text-decoration: none; max-width: 100%; overflow-wrap: anywhere; }
+.gorder-ref:active { color: var(--ink); text-decoration: underline; }
+.gorder-ref:focus-visible, .gorder-fold > summary:focus-visible, .gorder-part > summary:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; border-radius: 12px; }
+
 .book-guide dl { margin: 12px 0 0; }
 .book-guide .g-row { padding: 10px 0; border-top: 1px solid var(--line); }
 .book-guide dt { font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }

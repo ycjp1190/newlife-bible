@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { BOOK_NAMES } from "../public/shared/bible.js";
 import { EOSEONG } from "../public/shared/eoseong.js";
-import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS } from "../public/shared/guide.js";
+import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS, CHRONO_PARTS } from "../public/shared/guide.js";
 import { abbrBook, BOOK_ABBR, chronoOrder, chronoTimeline, EOSEONG120, fullRef } from "../public/shared/eoseong120.js";
 
 test("120일 읽기표는 DAY 1~120, 본문 462개이며 확정 원본의 문자열·순서를 보존한다", () => {
@@ -191,7 +191,23 @@ test("본문의 전체 책 이름 표시는 괄호만 빼고 범위·반절·장
   assert.equal(fullRef("(시 34편)"), "시편 34편");
 });
 
-test("시간 순서 화면은 연대 타임라인·큰 줄기·함께 읽기와 전체 책 이름의 배경 버튼을 표시한다", () => {
+test("짧은 연대 12개와 예수님·교회 하위 구간 시작점은 확정 자료와 일치한다", () => {
+  assert.deepEqual(ERAS.map(e => e.yearsShort), [
+    ["창조 ~", "BC 1446"], ["BC 1446", "~ 1406"], ["BC 1406", "~ 1050"],
+    ["BC 1050", "~ 930"], ["BC 930", "~ 586"], ["BC 605", "~ 538"],
+    ["아담 ~", "귀환 이후"], ["BC 538", "~ 430"], ["연대", "미상"],
+    ["BC 6~4", "~ AD 30", "또는 33"], ["AD 30", "~ 1세기 말"], ["AD 95", "기록"],
+  ]);
+  assert.deepEqual(Object.keys(CHRONO_PARTS), ["예수님", "교회"]);
+  assert.deepEqual(CHRONO_PARTS["예수님"].map(p => p.from), ["눅 1:1~38", "눅 2:39~3:18", "요 1:29~4:2", "눅 4:14~30", "눅 8:1~18", "마 16:1~12", "요 7:1~10", "요 12:1~11", "눅 24:1~49"]);
+  assert.deepEqual(CHRONO_PARTS["교회"].map(p => p.from), ["행 1:1~11", "행 8:26~40", "행 11:19~15:35", "행 15:36~41", "행 18:24~19:1a", "행 21:17~28장", "딤전 1~6장", "약 1~5장"]);
+  for (const [title, parts] of Object.entries(CHRONO_PARTS)) {
+    const rows = chronoTimeline().find(e => e.title === title).rows;
+    for (const { from } of parts) assert.equal(rows.filter(r => r.main === from).length, 1, from);
+  }
+});
+
+test("시간 순서 화면은 12색 접는 타임라인·왼쪽 연대·항상 보이는 함께 읽기·하위 구간과 전체 책 이름의 배경 버튼을 표시한다", () => {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const guide = source.slice(source.indexOf("const guideBookOf ="), source.indexOf("// ── 화면: 설정"));
   for (const mode of ["group", "personal"]) {
@@ -200,22 +216,85 @@ test("시간 순서 화면은 연대 타임라인·큰 줄기·함께 읽기와 
     runInNewContext(`${guide}\nrenderGuide(); openBookGuide(abbrBook("(눅 3:23b~38)"));`, {
       S: { mode }, store: { get: () => "order" }, $: () => app,
       esc: (value) => String(value), navHtml: () => "", openSheet: (html) => { sheet = html; },
-      CANON, BOOK_GROUPS, BOOK_GUIDE, ERAS, abbrBook, chronoTimeline, fullRef,
+      CANON, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, chronoTimeline, fullRef,
     });
-    assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 굵은 줄은 이야기의 큰 줄기, 들여 쓴 '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서 본문이에요. 본문을 누르면 그 책의 배경을 볼 수 있어요."));
+    assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 왼쪽 연대는 대략적인 연도예요. 시대를 누르면 펼쳐져요. 굵은 줄은 이야기의 큰 줄기이고, '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서예요. 본문을 누르면 그 책의 배경을 볼 수 있어요."));
     assert.doesNotMatch(app.innerHTML, /DAY|120일|gorder-chip|gorder-items|괄호 표기|›/);
     assert.match(app.innerHTML, /<ol class="gorder-timeline">/);
-    assert.equal((app.innerHTML.match(/class="gorder-era"/g) || []).length, chronoTimeline().length);
-    for (const { title, years } of chronoTimeline()) {
-      const no = String(ERAS.findIndex((e) => e.title === title) + 1).padStart(2, "0");
-      assert.ok(app.innerHTML.includes(`<h2 class="gorder-title">${no} · ${title}</h2>`));
-      assert.ok(app.innerHTML.includes(`<p class="gorder-years">${years}</p>`));
+    const eras = app.innerHTML.match(/<li class="gorder-era" style="--c:#[0-9a-f]{6}">[\s\S]*?(?=<li class="gorder-era"|<\/ol>)/g) || [];
+    // 욥기는 따로 두지 않고 '시작과 족장'의 함께 읽기로 붙는다.
+    const timeline = chronoTimeline();
+    const job = timeline.find((e) => e.title === "욥기");
+    const expected = timeline.filter((e) => e !== job);
+    const firstLast = expected[0].rows.at(-1);
+    expected[0] = { ...expected[0], rows: [...expected[0].rows.slice(0, -1), { ...firstLast, also: [...firstLast.also, ...job.rows.flatMap((r) => [r.main, ...r.also].filter(Boolean))] }] };
+    assert.equal(expected.length, 11);
+    assert.deepEqual(expected[0].rows, [{ main: "창 1~50장", also: ["(욥 1~42장)"] }]);
+    assert.doesNotMatch(app.innerHTML, /<h2 class="gorder-title">욥기<\/h2>/);
+    assert.equal(eras.length, 11);
+    assert.equal(new Set(eras.map((html) => html.match(/--c:(#[0-9a-f]{6})/)[1])).size, 11);
+    assert.equal((app.innerHTML.match(/<details class="gorder-fold">/g) || []).length, 11);
+    assert.doesNotMatch(app.innerHTML, /<details[^>]*\bopen\b/);
+    for (const [i, { title, years, rows }] of expected.entries()) {
+      const era = eras[i];
+      const no = String(i + 1).padStart(2, "0");
+      assert.ok(era.includes(`<span class="gorder-node" aria-hidden="true">${no}</span>`));
+      assert.ok(era.includes(`<h2 class="gorder-title">${title}</h2>`));
+      assert.ok(era.includes(`<span class="gorder-years" aria-label="${years}">${ERAS.find((e) => e.title === title).yearsShort.join("<br>")}</span>`));
+      const fold = era.slice(era.indexOf('<details class="gorder-fold">'));
+      assert.doesNotMatch(fold, /gorder-years/);
+      assert.ok(era.indexOf('class="gorder-years"') < era.indexOf('class="gorder-node"'));
+      assert.ok(era.indexOf('class="gorder-node"') < era.indexOf('class="gorder-fold"'));
+      const mainCount = rows.filter(({ main }) => main).length;
+      const alsoCount = rows.reduce((n, { also }) => n + also.length, 0);
+      const counts = [mainCount ? `큰 줄기 ${mainCount}` : "", alsoCount ? `함께 읽기 ${alsoCount}` : ""].filter(Boolean).join(" · ");
+      assert.ok(era.includes(`<span class="gorder-count">${counts}</span>`));
+      assert.doesNotMatch(era, /<details class="gorder-also"|gorder-direct/);
+      assert.equal((era.match(/<div class="gorder-also">/g) || []).length, rows.filter(({ also }) => also.length).length);
+      const parts = CHRONO_PARTS[title];
+      const renderedParts = era.match(/<details class="gorder-part">[\s\S]*?(?=<details class="gorder-part">|$)/g) || [];
+      assert.equal(renderedParts.length, parts?.length || 0);
+      if (parts) {
+        const starts = parts.map(({ from }) => rows.findIndex(({ main }) => main === from));
+        const partition = [];
+        for (const [j, part] of parts.entries()) {
+          assert.ok(starts[j] >= 0, part.from);
+          assert.ok(j === 0 ? starts[j] === 0 : starts[j] > starts[j - 1]);
+          const chunk = rows.slice(starts[j], starts[j + 1] ?? rows.length);
+          partition.push(...chunk);
+          const html = renderedParts[j];
+          assert.ok(html.includes(`<span class="gorder-part-title">${part.title}</span>`));
+          const partMain = chunk.filter(r => r.main).length, partAlso = chunk.reduce((n, r) => n + r.also.length, 0);
+          assert.ok(html.includes(`<span class="gorder-count">${[partMain ? `큰 줄기 ${partMain}` : "", partAlso ? `함께 읽기 ${partAlso}` : ""].filter(Boolean).join(" · ")}</span>`));
+          assert.doesNotMatch(html, /gorder-years/);
+          assert.deepEqual([...html.matchAll(/class="gorder-ref"[^>]*>([^<]+)<\/button>/g)].map(m => m[1]), chunk.flatMap(r => [r.main, ...r.also].filter(Boolean)).map(fullRef));
+        }
+        assert.deepEqual(partition, rows);
+      }
+      const renderedRows = era.match(/<div class="gorder-row">[\s\S]*?(?=<div class="gorder-row">|<\/div>\s*<\/details>\s*<\/li>)/g) || [];
+      assert.equal(renderedRows.length, rows.length);
+      for (const [j, { main, also }] of rows.entries()) {
+        const row = renderedRows[j];
+        assert.deepEqual([...row.matchAll(/class="gorder-ref"[^>]*>([^<]+)<\/button>/g)].map(m => m[1]), [main, ...also].filter(Boolean).map(fullRef));
+        if (main) assert.ok(row.includes(`>${fullRef(main)}</button>`));
+        if (also.length) {
+          assert.match(row, /<ul class="gorder-also-list">/);
+          assert.match(row, /<div class="gorder-also"><span class="gorder-also-label">함께 읽기<\/span><ul class="gorder-also-list">/);
+          for (const item of also) assert.ok(row.includes(`>${fullRef(item)}</button></li>`), item);
+        }
+      }
+      if (title === "포로기") {
+        assert.doesNotMatch(era, /class="gorder-main"/);
+        assert.match(era, /<div class="gorder-also"><span class="gorder-also-label">함께 읽기<\/span>/);
+        for (const item of rows.flatMap(({ also }) => also)) assert.ok(era.includes(`>${fullRef(item)}</button></li>`));
+      }
     }
     for (const item of chronoOrder().flatMap((g) => g.items)) {
       assert.ok(app.innerHTML.includes(`<button class="gorder-ref" type="button" data-action="book-guide" data-book="${abbrBook(item)}">${fullRef(item)}</button>`), item);
     }
     assert.equal((app.innerHTML.match(/data-action="book-guide"/g) || []).length, chronoOrder().flatMap((g) => g.items).length);
-    assert.match(app.innerHTML, /class="gorder-main">.*사무엘상 21장<\/button><\/div>\s*<div class="gorder-also">함께 읽기 · .*시편 34편<\/button>, .*시편 56편<\/button><\/div>/);
+    assert.equal((app.innerHTML.match(/class="gorder-ref"/g) || []).length, 361);
+    assert.match(app.innerHTML, /class="gorder-main">[^<]*<button[^>]*>사무엘상 21장<\/button><\/div>\s*<div class="gorder-also"><span class="gorder-also-label">함께 읽기<\/span><ul class="gorder-also-list"><li><button[^>]*>시편 34편<\/button><\/li><li><button[^>]*>시편 56편<\/button><\/li><\/ul><\/div>/);
     assert.match(sheet, /<h3>누가복음<\/h3>/);
   }
 });
