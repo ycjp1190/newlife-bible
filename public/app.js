@@ -1291,7 +1291,7 @@ function guideBooksHtml() {
 }
 
 function guideTag(tag) {
-  const kind = { 성경: "bible", 전통: "tradition", "일반적 견해": "common", 뜻풀이: "meaning", "후대 전승": "late" }[tag];
+  const kind = { 성경: "bible", 전통: "tradition", "일반적 견해": "common", 뜻풀이: "meaning" }[tag];
   return kind ? `<span class="guide-tag ${kind}">${esc(tag)}</span>` : "";
 }
 

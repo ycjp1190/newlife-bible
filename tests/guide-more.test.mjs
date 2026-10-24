@@ -101,7 +101,7 @@ for (const mode of ["group", "personal"]) {
     assert.equal((html.match(/<details class="disciple-card after-card">/g) || []).length, AFTER_ASCENSION.length);
     for (const g of AFTER_ASCENSION) { assert.ok(html.includes(esc(g.title))); for (const p of g.points) assert.ok(html.includes(esc(p.text))); }
     assert.equal((html.match(/<h4>마지막<\/h4>/g) || []).length, DISCIPLES.filter(d => d.end?.length).length);
-    assert.ok(html.includes('class="guide-tag late"'));
+    assert.doesNotMatch(html, /후대 전승|guide-tag late/); // 운영자 지시: 후대 전승은 싣지 않는다
     for (const group of SAME_NAMES) for (const p of group.people) assert.ok(html.includes(`${esc(p.who)} <small class="disciple-refs">${esc(p.refs)}</small>`));
     await s.press({ action: "book-guide", book: "마태복음" });
     assert.match(s.root.innerHTML, /role="dialog"/);
@@ -123,6 +123,6 @@ test("시트 내부 스크롤·휴대폰 버튼·oneLine·태그 스타일과 �
   runInNewContext(sw, { self: { addEventListener(type, fn) { if (type === "install") install = fn; }, skipWaiting() {} }, caches: { open: async name => { cache = name; return { addAll: async shell => { paths = shell; } }; } } });
   install({ waitUntil: p => { pending = p; } });
   await pending;
-  assert.equal(cache, "malsseum-v59");
+  assert.equal(cache, "malsseum-v60");
   for (const path of ["/shared/book-more.js", "/shared/disciples.js"]) assert.ok(paths.includes(path));
 });
