@@ -23,6 +23,12 @@ export function createLocalDB({ mode = "group", path = ":memory:", fresh = true,
     sqlite.exec(readFileSync(root + "data/seed.sql", "utf8"));
     if (migrate) for (const sql of migrations(mode)) sqlite.exec(sql);
   }
+  // 기존 미리보기 파일에는 migration 이력이 없으므로 새 칸의 유무로 이번 변경만 적용한다.
+  // 새 DB·메모리 테스트 DB는 위에서 전체 migration을 순서대로 적용한다.
+  if (!fresh && migrate && !sqlite.prepare("PRAGMA table_info(members)").all().some((c) => c.name === "admin_notify")) {
+    const dir = mode === "personal" ? "migrations-personal/0006" : "migrations-group/0007";
+    sqlite.exec(readFileSync(root + dir + "_admin_notify.sql", "utf8"));
+  }
 
   class Stmt {
     constructor(sql, params = []) { this.sql = sql; this.params = params; }
@@ -41,5 +47,6 @@ export function createLocalDB({ mode = "group", path = ":memory:", fresh = true,
     },
     // 검사용: SQL 직접 실행 (예: 변경 파일 적용)
     exec: (sql) => sqlite.exec(sql),
+    close: () => sqlite.close(),
   };
 }

@@ -207,9 +207,11 @@ test("짧은 연대 12개와 예수님·교회 하위 구간 시작점은 확정
   }
 });
 
-test("시간 순서 화면은 12색 접는 타임라인·왼쪽 연대·항상 보이는 함께 읽기·하위 구간과 전체 책 이름의 배경 버튼을 표시한다", () => {
+const partsClass = (title) => CHRONO_PARTS[title] ? 'class="gorder-part"' : 'class="gorder-row"';
+
+test("시간 순서 화면은 11시대 접는 타임라인·왼쪽 연대·항상 보이는 함께 읽기·하위 구간과 전체 책 이름의 배경 버튼을 표시한다", () => {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
-  const guide = source.slice(source.indexOf("const guideBookOf ="), source.indexOf("// ── 화면: 설정"));
+  const guide = source.slice(source.indexOf("const GORDER_COLORS ="), source.indexOf("// ── 화면: 설정"));
   for (const mode of ["group", "personal"]) {
     const app = { innerHTML: "" };
     let sheet;
@@ -218,9 +220,15 @@ test("시간 순서 화면은 12색 접는 타임라인·왼쪽 연대·항상 �
       esc: (value) => String(value), navHtml: () => "", openSheet: (html) => { sheet = html; },
       CANON, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, chronoTimeline, fullRef,
     });
-    assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 왼쪽 연대는 대략적인 연도예요. 시대를 누르면 펼쳐져요. 굵은 줄은 이야기의 큰 줄기이고, '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서예요. 본문을 누르면 그 책의 배경을 볼 수 있어요."));
+    assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 연대는 대략이에요. 시대를 누르면 요약과 읽는 순서가 펼쳐져요. 굵은 줄은 큰 줄기, '함께 읽기'는 그 시기에 함께 읽는 본문이에요. 본문이나 책을 누르면 책 배경이 나와요."));
     assert.doesNotMatch(app.innerHTML, /DAY|120일|gorder-chip|gorder-items|괄호 표기|›/);
     assert.match(app.innerHTML, /<ol class="gorder-timeline">/);
+    assert.doesNotMatch(source, /guideView|guide-view|guide-views/);
+    assert.match(app.innerHTML, /class="btn secondary guide-find"[^>]*data-action="guide-books">66권 찾기<\/button>/);
+    assert.ok(!app.innerHTML.includes(ERAS.find(e => e.title === "욥기").summary));
+    for (const group of ERAS.flatMap(e => e.groups || [])) {
+      assert.ok(!app.innerHTML.includes(group.summary));
+    }
     const eras = app.innerHTML.match(/<li class="gorder-era" style="--c:#[0-9a-f]{6}">[\s\S]*?(?=<li class="gorder-era"|<\/ol>)/g) || [];
     // 욥기는 따로 두지 않고 '시작과 족장'의 함께 읽기로 붙는다.
     const timeline = chronoTimeline();
@@ -243,6 +251,13 @@ test("시간 순서 화면은 12색 접는 타임라인·왼쪽 연대·항상 �
       assert.ok(era.includes(`<span class="gorder-years" aria-label="${years}">${ERAS.find((e) => e.title === title).yearsShort.join("<br>")}</span>`));
       const fold = era.slice(era.indexOf('<details class="gorder-fold">'));
       assert.doesNotMatch(fold, /gorder-years/);
+      const data = ERAS.find(e => e.title === title);
+      assert.ok(fold.includes(`<p class="gorder-summary">${data.summary}</p>`));
+      const people = fold.match(/<p class="guide-people">([\s\S]*?)<\/p>/)[1];
+      assert.deepEqual([...people.matchAll(/<span class="chip">([^<]+)<\/span>/g)].map(m => m[1]), data.people);
+      assert.ok(fold.indexOf('class="gorder-summary"') < fold.indexOf('class="guide-people"'));
+      assert.ok(fold.indexOf('class="guide-people"') < fold.indexOf(partsClass(title)));
+
       assert.ok(era.indexOf('class="gorder-years"') < era.indexOf('class="gorder-node"'));
       assert.ok(era.indexOf('class="gorder-node"') < era.indexOf('class="gorder-fold"'));
       const mainCount = rows.filter(({ main }) => main).length;
@@ -333,4 +348,57 @@ test("66권 분류와 '교회' 구간 묶음이 빠짐·겹침 없이 맞다", a
   const church = ERAS.find((e) => e.title === "교회");
   const grouped = church.groups.flatMap((g) => g.books);
   assert.deepEqual([...grouped].sort(), [...church.books].sort());
+});
+
+
+test("66권 찾기 창은 두 모드에서 구약·신약 분류 66권을 표시하고 책 배경 창으로 바뀐다", async () => {
+  const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  const guide = source.slice(source.indexOf("const GORDER_COLORS ="), source.indexOf("// ── 화면: 설정"));
+  const clickSource = source.slice(source.lastIndexOf('document.addEventListener("click"'), source.indexOf('document.addEventListener("change"'));
+  for (const mode of ["group", "personal"]) {
+    let sheet, click;
+    const context = {
+      S: { mode }, esc: (value) => String(value),
+      openSheet: (html) => { sheet = html; },
+      document: { addEventListener: (type, fn) => { if (type === "click") click = fn; } },
+      BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, chronoTimeline, fullRef,
+    };
+    runInNewContext(`${guide}\n${clickSource}`, context);
+    const press = async (dataset) => click({ target: { closest: () => ({ dataset }) } });
+    await press({ action: "guide-books" });
+    assert.match(sheet, /구약 <small>39권<\/small>/);
+    assert.match(sheet, /신약 <small>27권<\/small>/);
+    for (const [, title, books] of BOOK_GROUPS) {
+      assert.ok(sheet.includes(`<h3 class="ggroup-t">${title} <small>${books.length}권</small></h3>`));
+    }
+    const books = [...sheet.matchAll(/data-action="book-guide" data-book="([^"]+)">([^<]+)<\/button>/g)];
+    assert.equal(books.length, 66);
+    assert.deepEqual(books.map(m => m[1]), BOOK_GROUPS.flatMap(([, , names]) => names));
+    assert.deepEqual(books.map(m => m[2]).sort(), [...CANON].sort());
+    for (const [, book] of books) {
+      await press({ action: "book-guide", book });
+      assert.match(sheet, /<div class="book-guide">/);
+      assert.ok(sheet.includes(`<h3>${book}</h3>`));
+      assert.ok(!sheet.includes('<h3>66권 찾기</h3>'));
+      const eras = [...new Set(BOOK_GUIDE[book].eras.map(t => t === "욥기" ? "시작과 족장" : t))];
+      const timeline = ERAS.filter(e => e.title !== "욥기");
+      assert.deepEqual([...sheet.matchAll(/<span class="chip">([^<]+)<\/span>/g)].map(m => m[1]),
+        eras.map(t => `${String(timeline.findIndex(e => e.title === t) + 1).padStart(2, "0")} · ${t}`));
+    }
+    await press({ action: "book-guide", book: "욥기" });
+    assert.equal((sheet.match(/01 · 시작과 족장/g) || []).length, 1);
+    assert.doesNotMatch(sheet, /09 · 욥기/);
+    await press({ action: "book-guide", book: "누가복음" });
+    assert.match(sheet, /09 · 예수님/);
+    // 자료에 두 시대 이름이 함께 들어 있어도 합쳐진 칩은 한 번만 표시한다.
+    context.BOOK_GUIDE = { ...BOOK_GUIDE, 욥기: { ...BOOK_GUIDE.욥기, eras: ["욥기", "시작과 족장", "욥기"] } };
+    await press({ action: "book-guide", book: "욥기" });
+    assert.equal((sheet.match(/<span class="chip">01 · 시작과 족장<\/span>/g) || []).length, 1);
+  }
+  const css = readFileSync(new URL("../public/style.css", import.meta.url), "utf8");
+  assert.match(css, /\.gorder-summary\s*\{[^}]*font-size: 14\.5px;[^}]*line-height: 1\.6;/);
+  assert.doesNotMatch(css, /\.(?:eras|era|era-no|era-t|era-people|egroup|guide-views)(?:[\s.{:]|$)/);
+  const today = source.slice(source.indexOf("function bookInfoHtml"), source.indexOf("function checksHtml"));
+  assert.match(today, /data-action="book-guide"/);
+  assert.match(today, /ⓘ/);
 });

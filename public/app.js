@@ -4,7 +4,8 @@ import {
   MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
-import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS, CHRONO_PARTS } from "./shared/guide.js";
+import { guideMatches } from "./shared/guide-flow.js";
+import { BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS } from "./shared/guide.js";
 import { abbrBook, chronoTimeline, fullRef } from "./shared/eoseong120.js";
 import { latestNotice, LATEST_NOTICE, NOTICES, noticesFor } from "./shared/notices.js";
 import { celebrate } from "./celebrate.js";
@@ -25,6 +26,8 @@ const S = {
   token: store.get("token"),
   me: null, plan: [], startDate: null, today: kstToday(), checks: new Map(),
   vapid: null, loaded: false, tab: store.get("tab") || "today", planJump: true,
+  dailyView: store.get("dailyView") === "plan" ? "plan" : "today",
+  theme: ["light", "dark"].includes(store.get("theme")) ? store.get("theme") : "auto",
   mode: store.get("mode") || "group", joinView: "new",
   roadmap: "flow397", perDay: 3,
   readDays: EVERY_DAY, sched: null, noticeSeen: 999, // 읽는 요일·일정(개인: 나만, 모임: 공통), 확인한 업데이트 소식 번호
@@ -34,6 +37,27 @@ const S = {
   pick: null, // 개인 모드 계획 고르기 { step, context: "join"|"change", name, roadmap, perDay, readDays, start }
   members: null, showAllMissed: false, push: "unknown",
 };
+
+// 예전 일정 주소·버튼·저장값도 매일 > 일정으로 이어 준다.
+function selectTab(tab, dailyView) {
+  if (tab === "plan") { tab = "today"; dailyView = "plan"; }
+  S.tab = tab;
+  if (dailyView === "today" || dailyView === "plan") S.dailyView = dailyView;
+  store.set("tab", S.tab);
+  store.set("dailyView", S.dailyView);
+  S.planJump = S.tab === "today" && S.dailyView === "plan";
+}
+if (S.tab === "plan") selectTab("plan");
+
+function applyTheme() {
+  const root = document.documentElement;
+  if (S.theme === "auto") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", S.theme);
+  const dark = S.theme === "dark" || (S.theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  $('meta[name="theme-color"]').setAttribute("content", dark ? "#1b1a17" : "#f7f2e9");
+}
+applyTheme();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
 
 // 개인 모드(혼자 읽기)인지. 모임 모드에서만 "모두에게 적용" 같은 문구를 보여 준다.
 const personal = () => S.mode === "personal";
@@ -212,7 +236,8 @@ const CHECK_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" st
 function bookInfoHtml(chapters) {
   const books = [...new Set(chapters.map((c) => c[0]))].filter((b) => BOOK_GUIDE[b]);
   return books.length ? `<div class="book-info">${books.map((b) =>
-    `<button class="link-btn" type="button" data-action="book-guide" data-book="${esc(b)}">ⓘ ${esc(b)} 배경</button>`).join("")}</div>` : "";
+    `<button class="link-btn" type="button" data-action="book-guide" data-book="${esc(b)}">ⓘ ${esc(b)} 배경</button>`).join("")}
+    <button class="link-btn guide-flow-link" type="button" data-action="today-flow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v12m0-10h9M3 8h6m-6 4h9"/><circle cx="3" cy="4" r="1"/><circle cx="3" cy="8" r="1"/><circle cx="3" cy="12" r="1"/></svg>시대 흐름 보기</button></div>` : "";
 }
 
 function checksHtml(day) {
@@ -245,15 +270,14 @@ function pushNotice() {
 }
 
 const ICONS = {
-  today: `<path d="M4 5.5A1.5 1.5 0 015.5 4H11v16H5.5A1.5 1.5 0 014 18.5z M20 5.5A1.5 1.5 0 0018.5 4H13v16h5.5a1.5 1.5 0 001.5-1.5z"/>`,
+  today: `<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8.5 15l2.5 2.5 4.5-4.5"/>`,
   together: `<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.3-.3 4.4 1.2 5 4.3"/>`,
   chat: `<path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H10l-4 3.5V16h0.5A2.5 2.5 0 014 13.5z"/><path d="M8.5 9.5h7M8.5 12.5h4.5"/>`,
-  plan: `<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>`,
   settings: `<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.4l2 1.2M17.8 15.4l2 1.2M4.2 16.6l2-1.2M17.8 8.6l2-1.2"/>`,
   guide: `<circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>`,
   admin: `<path d="M4 20h16"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/>`,
 };
-const TAB_NAMES = { today: "오늘", together: "함께", chat: "대화", plan: "일정", guide: "길잡이", settings: "설정", admin: "관리자" };
+const TAB_NAMES = { today: "매일", together: "함께", chat: "대화", guide: "길잡이", settings: "설정", admin: "관리자" };
 const GROUP_ONLY_TABS = ["together", "chat"];
 // 관리자 탭: 개인 모드에서 이 기기에 관리자 코드를 넣었을 때만
 const hasAdmin = () => !!store.get("adminCode"); // 두 앱 모두 (모임용 관리자 탭은 의견·제보만)
@@ -573,6 +597,20 @@ function videoButton(date) {
   return url ? `<a class="btn secondary block mt video-btn" href="${esc(url)}" target="_blank" rel="noopener">▶ 오늘 본문 영상 보기</a>` : "";
 }
 
+// 매일의 폴더 탭은 일정 머리보다 한 층 위에서 함께 고정된다.
+function dailyHtml(body) {
+  return `<header class="top"><h1>매일</h1><span class="date">${niceDate(S.today)}</span></header>
+    <nav class="daily-folders" aria-label="매일 보기">${[["today", "오늘"], ["plan", "일정"]].map(([view, label]) =>
+      `<button type="button" data-action="daily-view" data-view="${view}" ${S.dailyView === view ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav>
+    <section class="daily-panel" aria-label="${S.dailyView === "plan" ? "일정" : "오늘"}">${body}</section>
+    ${navHtml()}`;
+}
+
+function renderDaily() {
+  if (S.dailyView === "plan") renderPlan();
+  else renderToday();
+}
+
 // ── 화면: 오늘 ────────────────────────────────────────
 function renderToday() {
   const t = todayDay();
@@ -627,14 +665,12 @@ function renderToday() {
       ${missed.length > 5 ? `<button class="btn ghost" data-action="toggle-missed">${S.showAllMissed ? "접기" : `모두 보기 (${missed.length}일)`}</button>` : ""}
     </div>` : "";
 
-  $("#app").innerHTML = `
-    <header class="top"><h1>${appName()}</h1><span class="date">${niceDate(S.today)}</span></header>
+  $("#app").innerHTML = dailyHtml(`
     ${pushNotice()}
     ${main}
     ${aheadHtml()}
     ${missedHtml}
-    ${beforeJoinLeft() ? `<p class="hint mt">DAY ${joinDay()}부터 모임에 참여했어요. 그 전 분량 ${beforeJoinLeft()}일은 밀린 읽기에 들어가지 않아요. 원하면 <button class="link-btn" data-action="tab" data-tab="plan">일정 탭</button>에서 따로 읽을 수 있어요.</p>` : ""}
-    ${navHtml()}`;
+    ${beforeJoinLeft() ? `<p class="hint mt">DAY ${joinDay()}부터 모임에 참여했어요. 그 전 분량 ${beforeJoinLeft()}일은 밀린 읽기에 들어가지 않아요. 원하면 <button class="link-btn" data-action="tab" data-tab="plan">매일 > 일정</button>에서 따로 읽을 수 있어요.</p>` : ""}`);
 }
 
 // 오늘 분량보다 앞서 미리 읽은 곳: "DAY 8 (10월 11일)의 누가복음 23장까지 미리 읽었어요"
@@ -657,7 +693,7 @@ function aheadHtml() {
   const text = allDone ? `<b>${label}</b>까지 미리 다 읽었어요`
     : `<b>${label}</b>의 <b>${esc(itemLabel(chapters.at(-1)))}</b>까지 미리 읽었어요`;
   return `<button class="ahead" data-action="open-day" data-day="${far}">🚀 ${text}
-    <small>오늘 이후 분량 ${count}장 체크${gap ? " · 중간에 건너뛴 날이 있어요 (일정 탭에서 확인)" : ""}</small></button>`;
+    <small>오늘 이후 분량 ${count}장 체크${gap ? " · 중간에 건너뛴 날이 있어요 (매일 > 일정에서 확인)" : ""}</small></button>`;
 }
 
 function dayRowHtml(day) {
@@ -1110,21 +1146,21 @@ function renderPlan() {
     if (label && label !== "쉬는 날") lastSection = label;
     return head + dayRowHtml(d.day);
   }).join("");
-  $("#app").innerHTML = `
+  $("#app").innerHTML = dailyHtml(`
     <div class="plan-head">
-    <header class="top"><h1>전체 일정</h1><span class="date">${doneCount} / ${total()}일 완료</span></header>
-    <div class="btn-row" style="margin-top:0">
-      ${t >= 1 && t <= total() ? `<button class="btn secondary" data-action="jump-today">오늘로 이동</button>` : ""}
-      ${fixedPlan() ? "" : `<button class="btn secondary" data-action="bulk-edit">전체 표 직접 편집</button>
-      <button class="btn secondary" data-action="history">변경 기록</button>`}
+    <div class="plan-tools">
+      <p class="plan-status">전체 일정 · ${doneCount} / ${total()}일 완료</p>
+      ${t >= 1 && t <= total() ? `<button class="mini-btn" data-action="jump-today">오늘로</button>` : ""}
+      ${fixedPlan() ? "" : `<button class="mini-btn" data-action="history">변경 기록</button>`}
     </div>
     <p class="hint">${fixedPlan()
       ? "날짜를 누르면 그날 본문을 체크할 수 있어요. 맥체인 읽기표는 바꿀 수 없어요."
       : `날짜를 누르면 체크하거나 읽기 범위를 바꿀 수 있어요. ${forAll("바꾼 내용은 모두에게 적용돼요.")}`}</p>
     </div>
     <div class="card mt"><ul class="list">${rows}</ul></div>
-    ${navHtml()}`;
-  // 일정 탭을 처음 열 때만 오늘로 이동한다(체크 등으로 다시 그릴 때는 그대로 둔다).
+    ${fixedPlan() ? "" : `<div class="plan-danger"><p class="hint">여러 날의 읽기 범위를 한 번에 바꾸는 고급 기능이에요.${forAll(" 모두에게 적용돼요.")}</p>
+      <button class="mini-btn" data-action="bulk-edit">전체 표 직접 편집</button></div>`}`);
+  // 매일 > 일정을 처음 열 때만 오늘로 이동한다(체크 등으로 다시 그릴 때는 그대로 둔다).
   if (S.planJump) {
     S.planJump = false;
     requestAnimationFrame(() => jumpToday("auto"));
@@ -1135,9 +1171,7 @@ function jumpToday(behavior = "smooth") {
   $(`#day-${todayDay()}`)?.scrollIntoView({ block: "center", behavior });
 }
 
-// ── 화면: 성경 길잡이 (큰 흐름, 66권 배경, 시간 순서) ──
-// "출애굽기 1~4장" → "출애굽기"
-const guideBookOf = (text) => CANON.find((b) => text === b || text.startsWith(`${b} `)) || null;
+// ── 화면: 성경 길잡이 (시간 순서와 책 배경) ──
 
 // 시대 순서대로 이어지는 색: 흰 번호 글자와 대비를 유지한다.
 const GORDER_COLORS = [
@@ -1159,13 +1193,6 @@ function orderEras() {
 }
 
 function renderGuide() {
-  const view = S.guideView || store.get("guideView") || "flow";
-  const tabsHtml = `<div class="pick-chips guide-views">${[["flow", "전체 흐름"], ["books", "66권 배경"], ["order", "시간 순서"]].map(([v, label]) =>
-    `<button class="pchip ${view === v ? "on" : ""}" type="button" data-action="guide-view" data-view="${esc(v)}">${esc(label)}</button>`).join("")}</div>`;
-  const bookBtn = (text) => {
-    const b = guideBookOf(text);
-    return b ? `<button class="gbook" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(text)}</button>` : `<span class="gbook">${esc(text)}</span>`;
-  };
   const orderBtn = (item) => {
     const b = abbrBook(item);
     return `<button class="gorder-ref" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(fullRef(item))}</button>`;
@@ -1179,8 +1206,7 @@ function renderGuide() {
     const also = rows.reduce((n, row) => n + row.also.length, 0);
     return [main ? `큰 줄기 ${main}` : "", also ? `함께 읽기 ${also}` : ""].filter(Boolean).join(" · ");
   };
-  const body = view === "order"
-    ? `<p class="hint">${esc("「어성경 핸드북」의 시간 순서예요. 왼쪽 연대는 대략적인 연도예요. 시대를 누르면 펼쳐져요. 굵은 줄은 이야기의 큰 줄기이고, '함께 읽기'는 그 시기에 함께 읽는 시편·예언서·서신·다른 복음서예요. 본문을 누르면 그 책의 배경을 볼 수 있어요.")}</p>
+  const body = `<p class="hint">${esc("「어성경 핸드북」의 시간 순서예요. 연대는 대략이에요. 시대를 누르면 요약과 읽는 순서가 펼쳐져요. 굵은 줄은 큰 줄기, '함께 읽기'는 그 시기에 함께 읽는 본문이에요. 본문이나 책을 누르면 책 배경이 나와요.")}</p>
       <ol class="gorder-timeline">${orderEras().map(({ title, years, rows }, i) => {
         const era = ERAS.find((e) => e.title === title);
         const parts = CHRONO_PARTS[title];
@@ -1194,39 +1220,78 @@ function renderGuide() {
           <span class="gorder-node" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span>
           <details class="gorder-fold">
             <summary><h2 class="gorder-title">${esc(title)}</h2><span class="gorder-count">${orderCounts(rows)}</span></summary>
-            <div class="gorder-body">${content}</div>
+            <div class="gorder-body">
+              <p class="gorder-summary">${esc(era.summary)}</p>
+              <p class="guide-people">${era.people.map((name) => `<span class="chip">${esc(name)}</span>`).join(" ")}</p>
+              ${content}</div>
           </details>
         </li>`;
-      }).join("")}</ol>`
-    : view === "books"
-    ? ["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
-        <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>
-          <div class="gbooks">${books.map(bookBtn).join("")}</div>`).join("")}</div>`).join("")
-    : `<p class="hint">「어? 성경이 읽어지네!」 읽기 순서의 큰 구간이에요. 사건이 일어난 순서나 지금 고른 읽기 계획과 다를 수 있어요. 누르면 펼쳐지고, 책 이름을 누르면 배경을 볼 수 있어요.</p>
-      <ol class="eras">${ERAS.map((e, i) => `<li class="card era"><details>
-        <summary><span class="era-no">${String(i + 1).padStart(2, "0")}</span><span class="era-t"><b>${esc(e.title)}</b><small>${esc(e.years)}</small></span></summary>
-        <p>${esc(e.summary)}</p>
-        ${e.people?.length ? `<p class="era-people">${e.people.map((x) => `<span class="chip">${esc(x)}</span>`).join(" ")}</p>` : ""}
-        ${e.groups ? e.groups.map((g) => `<div class="egroup"><h3 class="ggroup-t">${esc(g.title)} <small>${esc(g.years)}</small></h3>
-          <p>${esc(g.summary)}</p><div class="gbooks">${g.books.map(bookBtn).join("")}</div></div>`).join("")
-          : `<div class="gbooks">${e.books.map(bookBtn).join("")}</div>`}
-      </details></li>`).join("")}</ol>`;
+      }).join("")}</ol>`;
   $("#app").innerHTML = `
-    <header class="top"><h1>성경 길잡이</h1></header>
-    ${tabsHtml}
+    <header class="top"><h1>성경 길잡이</h1><button class="btn secondary guide-find" type="button" data-action="guide-books">66권 찾기</button></header>
     ${body}
     <p class="hint mt">연대와 저자는 한국 교회에서 일반적인 전통적 견해를 따랐어요.</p>
     ${navHtml()}`;
 }
 
+function openTodayFlow() {
+  const matches = guideMatches(dayPlan(todayDay()).chapters, orderEras());
+  selectTab("guide");
+  window.scrollTo(0, 0);
+  render();
+  const timeline = $(".gorder-timeline");
+  if (!matches.length) {
+    toast("이 본문은 시간 순서표에서 찾지 못했어요");
+    return;
+  }
+  const targets = new Set();
+  const eras = timeline.querySelectorAll(".gorder-era");
+  for (const { eraIndex, partIndexes, rows } of matches) {
+    const era = eras[eraIndex];
+    era.querySelector(".gorder-fold").open = true;
+    if (partIndexes.length) {
+      const parts = era.querySelectorAll(".gorder-part");
+      for (const index of partIndexes) {
+        parts[index].open = true;
+        targets.add(parts[index].querySelector(".gorder-part-title"));
+      }
+    } else {
+      const orderRows = era.querySelectorAll(".gorder-row");
+      for (const { rowIndex, refIndexes } of rows) {
+        const refs = orderRows[rowIndex].querySelectorAll(".gorder-ref");
+        for (const index of refIndexes) targets.add(refs[index]);
+      }
+    }
+  }
+  // 탭을 그리고 details를 펼친 뒤 레이아웃이 잡힌 다음 이동한다.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (S.tab !== "guide" || $(".gorder-timeline") !== timeline) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    [...targets][0].scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    for (const target of targets) target.classList.add("gorder-highlight");
+    setTimeout(() => {
+      for (const target of targets) target.classList.remove("gorder-highlight");
+    }, 3100);
+  }));
+}
+
+function openGuideBooks() {
+  openSheet(`<h3>66권 찾기</h3>${["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
+    <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>
+      <div class="gbooks">${books.map((b) => `<button class="gbook" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(b)}</button>`).join("")}</div>`).join("")}</div>`).join("")}
+    <button class="btn secondary block mt" data-action="close-sheet">닫기</button>`);
+}
+
 function openBookGuide(name) {
   const g = BOOK_GUIDE[name];
   if (!g) return;
-  const eraNo = (t) => ERAS.findIndex((e) => e.title === t) + 1;
+  const timeline = orderEras();
+  const eras = [...new Set((g.eras || []).map((t) => t === "욥기" ? "시작과 족장" : t))];
+  const eraNo = (t) => timeline.findIndex((e) => e.title === t) + 1;
   const row = (label, text) => (text ? `<div class="g-row"><dt>${label}</dt><dd>${esc(text)}</dd></div>` : "");
   openSheet(`<div class="book-guide">
     <h3>${esc(name)}</h3>
-    ${g.eras?.length ? `<p class="era-people">${g.eras.map((t) => `<span class="chip">${String(eraNo(t)).padStart(2, "0")} · ${esc(t)}</span>`).join(" ")}</p>` : ""}
+    ${eras.length ? `<p class="guide-people">${eras.map((t) => `<span class="chip">${String(eraNo(t)).padStart(2, "0")} · ${esc(t)}</span>`).join(" ")}</p>` : ""}
     <dl>${row("시대", g.years)}${row("저자", g.author)}${row("독자와 배경", g.audience)}${row("핵심 메시지", g.message)}</dl>
     ${g.tips?.length ? `<h4>알아 두면 좋아요</h4><ul class="g-tips">${g.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
     <button class="btn secondary block mt" data-action="close-sheet">닫기</button>
@@ -1261,6 +1326,13 @@ function renderSettings() {
       <button class="row notices-row" data-action="notices"><span class="main"><span class="title">업데이트 내용</span>
         <span class="sub">새로 바뀐 점을 날짜별로 볼 수 있어요</span></span>
         ${unseenNotices() ? `<span class="chip warn">새 소식 ${unseenNotices()}</span>` : `<span class="mark">›</span>`}</button>
+    </div>
+
+    <h2 class="section">화면 테마</h2>
+    <div class="card">
+      <div class="pick-chips theme-chips" role="group" aria-label="화면 테마">${[["auto", "자동"], ["light", "밝게"], ["dark", "어둡게"]].map(([value, label]) =>
+        `<button class="pchip ${S.theme === value ? "on" : ""}" type="button" data-action="theme" data-theme="${value}" aria-pressed="${S.theme === value}">${label}</button>`).join("")}</div>
+      <p class="hint">자동은 기기의 밝은 화면·어두운 화면 설정을 따라요.</p>
     </div>
 
     <h2 class="section">의견 보내기</h2>
@@ -1679,7 +1751,7 @@ function render() {
   if (personal() && GROUP_ONLY_TABS.includes(S.tab)) S.tab = "today";
   if (S.tab === "admin" && !hasAdmin()) S.tab = "settings";
   $("#app").classList.toggle("chat-mode", S.tab === "chat");
-  ({ today: renderToday, together: renderTogether, chat: renderChat, plan: renderPlan, guide: renderGuide, settings: renderSettings, admin: renderAdmin }[S.tab] || renderToday)();
+  ({ today: renderDaily, together: renderTogether, chat: renderChat, guide: renderGuide, settings: renderSettings, admin: renderAdmin }[S.tab] || renderDaily)();
   const nav = $("nav.tabs");
   if (nav) document.documentElement.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
   syncChatSocket();
@@ -1768,19 +1840,28 @@ document.addEventListener("click", async (ev) => {
   const a = el.dataset.action;
   if (a === "toggle") toggleCheck(el);
   else if (a === "tab") {
-    S.tab = el.dataset.tab;
-    store.set("tab", S.tab);
-    S.planJump = S.tab === "plan";
+    selectTab(el.dataset.tab);
     window.scrollTo(0, 0);
     render();
     if (S.tab === "together") loadMembers();
     if (S.tab === "admin") loadAdmin();
     if (S.tab === "chat" && !store.get("lpHint")) { store.set("lpHint", "1"); toast("말풍선을 길게 누르면 공감·복사·수정·삭제를 할 수 있어요"); }
+  } else if (a === "daily-view") {
+    selectTab("today", el.dataset.view);
+    window.scrollTo(0, 0);
+    render();
+  } else if (a === "theme") {
+    if (!["auto", "light", "dark"].includes(el.dataset.theme)) return;
+    S.theme = el.dataset.theme;
+    store.set("theme", S.theme);
+    applyTheme();
+    render();
   } else if (a === "toggle-missed") { S.showAllMissed = !S.showAllMissed; render(); }
   else if (a === "open-day") openDay(Number(el.dataset.day));
   else if (a === "close-sheet") closeSheet();
   else if (a === "jump-today") jumpToday();
-  else if (a === "guide-view") { S.guideView = el.dataset.view; store.set("guideView", S.guideView); render(); }
+  else if (a === "guide-books") openGuideBooks();
+  else if (a === "today-flow") openTodayFlow();
   else if (a === "book-guide") openBookGuide(el.dataset.book);
   else if (a === "bulk-edit") openBulkEdit();
   else if (a === "history") openHistory();
@@ -1838,6 +1919,7 @@ document.addEventListener("click", async (ev) => {
   else if (a === "admin-refresh") loadAdmin();
   else if (a === "admin-logout") {
     if (!confirm("이 기기에서 관리자 코드를 지울까요? 관리자 탭이 사라져요.")) return;
+    void syncAdminNotify(false);
     store.del("adminCode");
     S.admin = null;
     render();
@@ -1956,7 +2038,7 @@ async function adminApi(path, code = store.get("adminCode") || "", { method = "G
   try {
     res = await fetch("/api/admin" + path, {
       method, body: body ? JSON.stringify(body) : undefined,
-      headers: { "Content-Type": "application/json", "X-Admin-Code": encodeURIComponent(code) },
+      headers: { "Content-Type": "application/json", "X-Admin-Code": encodeURIComponent(code), ...(S.token ? { Authorization: `Bearer ${S.token}` } : {}) },
     });
   } catch { throw new Error("인터넷 연결을 확인해 주세요."); }
   const data = await res.json().catch(() => ({}));
@@ -1965,7 +2047,20 @@ async function adminApi(path, code = store.get("adminCode") || "", { method = "G
   return data;
 }
 
-// 관리자 탭 데이터: 의견·제보(두 앱) + 사용자 통계(개인용만)
+// 등록 성공 시각은 회원별로 기록한다. 실패하면 다음 loadAdmin 때 다시 시도한다.
+async function syncAdminNotify(on, code = store.get("adminCode") || "", force = false) {
+  if (!code || !S.token) return;
+  const key = `adminNotify:${S.token}`;
+  const last = Number(store.get(key) || 0);
+  if (on && !force && Date.now() - last < 86400000) return;
+  try {
+    const result = await adminApi("/notify", code, { method: "POST", body: { on } });
+    if (on && result) store.set(key, String(Date.now()));
+  } catch { /* 알림 등록 실패가 관리자 로그인·로그아웃을 막지 않음 */ }
+  if (!on) store.del(key);
+}
+
+// 관리자 탭 데이터: 의견·제보 + 사용자 통계(두 앱)
 async function fetchAdmin(code) {
   const fb = await adminApi("/feedback", code);
   if (!fb) return null;
@@ -1993,6 +2088,7 @@ async function submitAdminCode(form) {
     const data = await fetchAdmin(code);
     if (!data) { openAdminLogin("관리자 코드가 맞지 않아요."); return; }
     store.set("adminCode", code);
+    void syncAdminNotify(true, code, true);
     S.admin = data;
     closeSheet();
     S.tab = "admin";
@@ -2008,12 +2104,14 @@ async function loadAdmin() {
   try {
     const data = await fetchAdmin(code);
     if (!data) { // 코드가 바뀌었거나 지워짐
+      void syncAdminNotify(false, code);
       store.del("adminCode");
       S.admin = null;
       render();
       toast("관리자 코드가 맞지 않아 관리자 탭을 닫았어요.");
       return;
     }
+    void syncAdminNotify(true, code);
     S.admin = data;
     if (S.tab === "admin" || data.newCount) render(); // 새 제보 빨간 점
   } catch (e) { toast(e.message); }
@@ -2034,7 +2132,11 @@ function adminFeedbackHtml() {
 }
 
 function renderAdmin() {
-  const head = `<header class="top"><h1>관리자</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>`;
+  const head = `<header class="top"><h1>관리자</h1><button class="btn ghost" data-action="admin-refresh">새로 고침</button></header>
+    ${S.push !== "on" ? `<p class="hint">휴대폰 알림을 켜면 새 제보를 알림으로 받아요</p>
+      ${S.push === "off" ? `<button class="btn secondary" data-action="push-on">알림 켜기</button>`
+        : S.push === "need-install" ? `<button class="btn secondary" data-action="install-guide">홈 화면에 추가하는 방법</button>`
+        : S.push === "denied" ? `<p class="hint">휴대폰 설정에서 이 앱의 알림을 허용해 주세요.</p>` : ""}` : ""}`;
   if (!S.admin) {
     $("#app").innerHTML = `${head}<p class="empty">불러오는 중…</p>${navHtml()}`;
     return;
@@ -2086,9 +2188,8 @@ async function start() {
   const params = new URLSearchParams(location.search);
   const invite = params.get("invite");
   if (invite) store.set("invite", invite);
-  if (params.get("tab") && TAB_NAMES[params.get("tab")]) {
-    S.tab = params.get("tab");
-    store.set("tab", S.tab);
+  if (params.get("tab") === "plan" || Object.hasOwn(TAB_NAMES, params.get("tab"))) {
+    selectTab(params.get("tab"), params.get("tab") === "today" ? "today" : undefined);
     if (!invite) history.replaceState(null, "", "/");
   }
   try {

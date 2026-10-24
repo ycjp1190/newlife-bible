@@ -364,13 +364,40 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 /* 이어 읽기: 예정보다 늦어진 날 */
 .lag-note { margin: -4px 0 10px; font-size: 13.5px; color: var(--gold); }
 
-/* 전체 일정: 위쪽(제목·버튼·설명)은 스크롤해도 고정, 구간이 바뀌는 곳에 구간 제목 */
+/* 폴더 탭 56px 아래에 일정 머리를 고정한다. 안전 영역은 두 곳에서 같은 값을 쓴다. */
+.daily-folders {
+  position: sticky; top: env(safe-area-inset-top); z-index: 6;
+  display: flex; gap: 6px; height: 56px; background: var(--bg);
+}
+.daily-folders::before {
+  content: ""; position: absolute; left: 0; right: 0;
+  bottom: 100%; height: env(safe-area-inset-top); background: var(--bg);
+}
+.daily-folders button {
+  flex: 1; border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 14px 14px 0 0; background: var(--line); color: var(--muted);
+  min-width: 0; min-height: 56px; padding: 12px 20px;
+  font-size: 18px; font-weight: 600; white-space: nowrap;
+}
+.daily-folders button[aria-current="page"] { background: var(--card); color: var(--ink); }
+.daily-folders button:focus-visible { outline: 2px solid var(--accent); outline-offset: -5px; }
+.daily-panel {
+  background: var(--card); border: 1px solid var(--line); border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius); padding: 12px; --shadow: none;
+}
 .plan-head {
-  position: sticky; top: 0; z-index: 5; background: var(--bg);
-  margin: calc(-1 * (env(safe-area-inset-top) + 16px)) -16px 0;
-  padding: calc(env(safe-area-inset-top) + 16px) 16px 12px;
+  position: sticky; top: calc(env(safe-area-inset-top) + 56px); z-index: 5;
+  background: var(--card); margin: -12px -12px 0; padding: 12px;
   border-bottom: 1px solid var(--line);
 }
+.plan-status { margin: 0; color: var(--muted); font-size: 14px; flex: 1; min-width: 0; }
+/* 일정 머리의 작은 도구 버튼. 전체 표 편집은 실수로 누르지 않게 목록 맨 아래(.plan-danger)에 둔다. */
+.plan-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.mini-btn { flex: none; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; }
+.plan-danger { margin: 28px 2px 8px; padding-top: 14px; border-top: 1px dashed var(--line); text-align: center; }
+.plan-danger .hint { margin: 0 0 8px; }
+.theme-chips { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 0; }
+.theme-chips .pchip { min-width: 0; padding-inline: 8px; }
 .plan-section {
   font-size: 13px; font-weight: 700; color: var(--accent);
   padding: 18px 2px 6px; border-bottom: 1px solid var(--line);
@@ -378,22 +405,10 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .list > .plan-section:first-child { padding-top: 0; }
 
 /* 성경 길잡이 */
-.guide-views { flex-wrap: nowrap; gap: 6px; }
-.guide-views .pchip { flex: 1; min-width: 0; padding: 8px 6px; white-space: nowrap; }
+.guide-find { padding: 7px 12px; font-size: 14px; }
+.gorder-summary { margin: 0 0 10px; font-size: 14.5px; line-height: 1.6; }
 .book-info { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -6px 0 12px; font-size: 14px; }
-.eras { list-style: none; padding: 0; margin: 0; }
-.era { margin-top: 10px; padding: 0; }
-.era summary { list-style: none; display: flex; gap: 12px; align-items: center; padding: 14px 16px; cursor: pointer; }
-.era summary::-webkit-details-marker { display: none; }
-.era summary::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 20px; transition: transform .2s; }
-.era details[open] summary::after { transform: rotate(90deg); }
-.era-no { font-weight: 700; color: var(--accent); font-size: 15px; }
-.era-t { display: flex; flex-direction: column; }
-.era-t small { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
-.era details > :not(summary) { margin-left: 16px; margin-right: 16px; }
-.era details > :last-child { margin-bottom: 14px; }
-.era details p { margin-top: 0; line-height: 1.6; }
-.era-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.guide-people { display: flex; flex-wrap: wrap; gap: 6px; }
 .gbooks { display: flex; flex-wrap: wrap; gap: 8px; }
 .gbook { border: 1.5px solid var(--line); background: var(--bg); color: inherit; border-radius: 10px; padding: 7px 11px; font-size: 14.5px; }
 .gorder-timeline { list-style: none; margin: 24px 0 0; padding: 0; }
@@ -433,6 +448,16 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .gorder-also-list .gorder-ref { width: auto; min-height: 32px; padding: 4px 9px; font-size: 13.5px; border-radius: 10px; background: var(--bg); background: color-mix(in srgb, var(--c) 7%, var(--bg)); }
 .gorder-ref { display: block; width: 100%; border: 0; background: none; padding: 6px 0; min-height: 40px; color: inherit; font: inherit; text-align: left; text-decoration: none; max-width: 100%; overflow-wrap: anywhere; }
 .gorder-ref:active { color: var(--ink); text-decoration: underline; }
+.guide-flow-link { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.guide-flow-link svg { width: 14px; height: 14px; }
+.gorder-highlight { animation: gorder-flash .5s ease-in-out 6; border-radius: 8px; box-shadow: 0 0 0 4px transparent; }
+@keyframes gorder-flash {
+  0%, 100% { background-color: transparent; }
+  50% { color: var(--ink); background-color: color-mix(in srgb, var(--gold) 45%, var(--card)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 45%, var(--card)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gorder-highlight, .gorder-ref.gorder-highlight { animation: none; color: var(--ink); background-color: color-mix(in srgb, var(--gold) 45%, var(--card)); }
+}
 .gorder-ref:focus-visible, .gorder-fold > summary:focus-visible, .gorder-part > summary:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; border-radius: 12px; }
 
 .book-guide dl { margin: 12px 0 0; }
@@ -445,5 +470,3 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .ggroup-t { font-size: 14px; font-weight: 700; color: var(--accent); margin: 16px 0 8px; }
 .ggroup-t:first-child { margin-top: 0; }
 .ggroup-t small { color: var(--muted); font-weight: 400; margin-left: 4px; }
-.egroup { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
-.egroup .ggroup-t { margin-top: 0; }

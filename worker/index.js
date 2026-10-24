@@ -459,6 +459,16 @@ async function handleApi(request, env, url, ctx) {
 
   const me = await authMember(request, env);
 
+  // 두 모드 모두: 켜기는 관리자 코드와 회원 토큰이 함께 있어야 한다.
+  // 끄기는 코드 없이도 허용한다(관리자 코드가 바뀐 기기가 제보 알림을 계속 받지 않게).
+  if (path === "/admin/notify" && method === "POST") {
+    const { on } = await readBody(request);
+    if (typeof on !== "boolean") throw new HttpError(400, "알림 켜기·끄기를 골라 주세요.");
+    if (on) checkAdmin(request, env);
+    await env.DB.prepare("UPDATE members SET admin_notify = ? WHERE id = ?").bind(on ? 1 : 0, me.id).run();
+    return json({ ok: true });
+  }
+
   if (path === "/state" && method === "GET") {
     await ensureMcheyneHorizon(env, me);
     const [plan, { startDate, readDays, sched }, checks] = await Promise.all([
@@ -610,6 +620,10 @@ async function handleApi(request, env, url, ctx) {
     if ((recent?.n || 0) >= 20) throw new HttpError(429, "오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요.");
     await env.DB.prepare("INSERT INTO feedback (member_id, anonymous, kind, body, status, created_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind(me.id, anonymous ? 1 : 0, kind, text, kind === "survey" ? "seen" : "new", nowIso()).run(); // 설문 답은 '새 제보'로 세지 않음
+    if (kind !== "survey") {
+      const job = notifyAdminFeedback(env, kind, text).catch((e) => console.error("admin feedback push error", e));
+      if (ctx?.waitUntil) ctx.waitUntil(job); else await job;
+    }
     return json({ ok: true });
   }
   if (path === "/feedback" && method === "GET") {
@@ -837,6 +851,17 @@ async function removeDone(env, me, day) {
 // ── 의견·제보 ─────────────────────────────────────────
 const FEEDBACK_KINDS = ["bug", "idea", "etc", "survey"]; // survey: 일회용 설문 답 (한 사람 한 번)
 const FEEDBACK_STATUS = ["new", "seen", "done", "closed"];
+const FEEDBACK_KIND_NAMES = { bug: "불편·오류", idea: "개선 제안", etc: "기타" };
+
+async function notifyAdminFeedback(env, kind, text) {
+  const { results } = await env.DB.prepare("SELECT id FROM members WHERE admin_notify = 1").all();
+  // 이름은 넣지 않아 익명 제보도 같은 형식으로 안전하게 표시한다. 본인이 보낸 제보도 받는다.
+  await Promise.all(results.map((m) => pushToMember(env, m.id, {
+    title: "📮 새 의견·제보가 왔어요", body: `${FEEDBACK_KIND_NAMES[kind]} · ${text.slice(0, 60)}`,
+    url: "/?tab=admin", tag: "admin-feedback",
+  }).catch((e) => console.error("admin feedback push error", e))));
+}
+
 const publicFeedback = (r) => ({
   id: r.id, anonymous: !!r.anonymous, kind: r.kind, body: r.body, status: r.status,
   reply: r.reply, repliedAt: r.replied_at, replyNew: r.reply_seen === 0, createdAt: r.created_at,

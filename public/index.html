@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>말씀 읽고 새 인생</title>
   <meta name="description" content="397일 성경읽기 — 오늘 읽을 말씀을 알려주고 함께 체크하는 앱">
-  <meta name="theme-color" content="#f7f2e9" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1b1a17" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f2e9">
+  <script>
+    (() => { let t; try { t = localStorage.getItem("theme"); } catch {} if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches) ? "#1b1a17" : "#f7f2e9"); })();
+  </script>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
