@@ -504,3 +504,14 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .disciple-refs { font-size: 12px; color: var(--muted); }
 .disciples-guide .same-names-title { margin-top: 22px; }
 .book-more > summary:focus-visible, .disciple-card > summary:focus-visible, .same-name-card > summary:focus-visible, .book-connect-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 인물 정보: 주제별 폴더 카드 */
+.people-folder { margin-top: 10px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--card); }
+.people-folder > summary { position: relative; list-style: none; cursor: pointer; padding: 14px 36px 14px 14px; display: flex; flex-direction: column; gap: 3px; }
+.people-folder > summary::-webkit-details-marker { display: none; }
+.people-folder > summary b { font-size: 17px; }
+.people-folder > summary small { color: var(--muted); font-size: 13px; }
+.people-folder > summary::after { content: ""; position: absolute; right: 16px; top: 22px; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); }
+.people-folder[open] > summary::after { transform: rotate(45deg); }
+.people-folder > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 14px; }
+.people-folder-body { padding: 0 14px 12px; }

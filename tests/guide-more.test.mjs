@@ -77,7 +77,10 @@ for (const mode of ["group", "personal"]) {
     assert.doesNotMatch(s.app.innerHTML, /guide-books|guide-resources|guide-disciples/);
     await s.press({ action: "guide-tab", guideTab: "people" });
     const html = s.app.innerHTML;
-    assert.match(html, /<section class="disciples-guide" aria-labelledby="disciples-title"><h2 id="disciples-title">열두 제자 이름 정리<\/h2>/);
+    // 인물 정보는 주제별 폴더(처음엔 닫힘): 열두 제자 / 헷갈리는 같은 이름. 범례는 폴더 밖 맨 위.
+    assert.match(html, /<section class="disciples-guide" aria-label="인물 정보">\s*<p class="guide-legend">/);
+    assert.deepEqual([...html.matchAll(/<details class="people-folder"><summary><b>([^<]+)<\/b>/g)].map(m => m[1]), ["열두 제자", "헷갈리는 같은 이름"]);
+    assert.ok(html.indexOf('class="people-folder"') < html.indexOf('class="disciple-card"'));
     assert.doesNotMatch(html, /role="dialog"|close-sheet|gorder-timeline|class="gbook"/);
     assert.match(html, /표시: 성경·전통·일반적 견해·뜻풀이를 구분했어요\./);
     assert.doesNotMatch(html, /연대와 저자는/);
@@ -114,6 +117,6 @@ test("시트 내부 스크롤·휴대폰 버튼·oneLine·태그 스타일과 �
   runInNewContext(sw, { self: { addEventListener(type, fn) { if (type === "install") install = fn; }, skipWaiting() {} }, caches: { open: async name => { cache = name; return { addAll: async shell => { paths = shell; } }; } } });
   install({ waitUntil: p => { pending = p; } });
   await pending;
-  assert.equal(cache, "malsseum-v57");
+  assert.equal(cache, "malsseum-v58");
   for (const path of ["/shared/book-more.js", "/shared/disciples.js"]) assert.ok(paths.includes(path));
 });
