@@ -405,7 +405,6 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .list > .plan-section:first-child { padding-top: 0; }
 
 /* 성경 길잡이 */
-.guide-find { padding: 7px 12px; font-size: 14px; }
 .gorder-summary { margin: 0 0 10px; font-size: 14.5px; line-height: 1.6; }
 .book-info { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -6px 0 12px; font-size: 14px; }
 .guide-people { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -470,3 +469,38 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .ggroup-t { font-size: 14px; font-weight: 700; color: var(--accent); margin: 16px 0 8px; }
 .ggroup-t:first-child { margin-top: 0; }
 .ggroup-t small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+/* 길잡이는 매일과 같은 폴더를 쓰며 360px에서도 세 이름을 한 줄로 표시한다. */
+.guide-folders button { padding-inline: 4px; font-size: 16px; }
+.disciples-guide > h2 { margin: 0 0 12px; font-size: 18px; }
+.book-one-line { margin: 6px 0 10px; font-size: 15px; font-weight: 500; color: var(--ink); }
+.book-more { margin-top: 16px; border-top: 1px solid var(--line); }
+.book-more > summary, .disciple-card > summary, .same-name-card > summary { position: relative; list-style: none; cursor: pointer; padding: 12px 24px 12px 0; }
+.book-more > summary::-webkit-details-marker, .disciple-card > summary::-webkit-details-marker, .same-name-card > summary::-webkit-details-marker { display: none; }
+.book-more > summary::after, .disciple-card > summary::after, .same-name-card > summary::after { content: ""; position: absolute; right: 4px; top: 19px; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
+.book-more[open] > summary::after, .disciple-card[open] > summary::after, .same-name-card[open] > summary::after { transform: rotate(225deg); }
+.book-more > summary { font-size: 15px; font-weight: 600; }
+.book-more dl { margin-top: 0; }
+.book-more .g-row { padding: 8px 0; }
+.book-more .g-tips { font-size: 14.5px; }
+.book-connect-ref { padding: 3px 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.book-views, .book-views h4 { color: var(--muted); font-size: 12.5px; }
+.book-views p { margin: 0; line-height: 1.6; }
+.disciples-guide { font-size: 14.5px; overflow-wrap: anywhere; }
+.disciples-lists { font-size: 12.5px; color: var(--muted); margin: 12px 0 8px; }
+.guide-legend { display: flex; flex-wrap: wrap; gap: 5px 10px; font-size: 12px; color: var(--muted); }
+.guide-tag { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 11.5px; line-height: 1.6; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+.guide-tag.bible { background: var(--accent-soft); color: var(--accent); }
+.guide-tag.tradition { background: var(--gold-soft); color: var(--gold); }
+.guide-tag.common { border-color: var(--line); color: var(--muted); }
+.guide-tag.meaning { border: 1px dashed var(--line); color: var(--muted); }
+.disciple-card, .same-name-card { border-top: 1px solid var(--line); }
+.disciple-card > summary { display: flex; gap: 9px; align-items: baseline; }
+.disciple-number { min-width: 18px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.disciple-english { display: block; font-size: 12px; color: var(--muted); }
+.disciples-guide h4 { margin: 12px 0 6px; color: var(--accent); font-size: 14px; }
+.disciple-body, .same-name-card > ul { padding-bottom: 12px; }
+.disciple-body h4:first-child { margin-top: 0; }
+.disciple-refs { font-size: 12px; color: var(--muted); }
+.disciples-guide .same-names-title { margin-top: 22px; }
+.book-more > summary:focus-visible, .disciple-card > summary:focus-visible, .same-name-card > summary:focus-visible, .book-connect-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

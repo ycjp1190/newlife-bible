@@ -9,6 +9,8 @@ import * as flow from "../public/shared/guide-flow.js";
 import * as guide from "../public/shared/guide.js";
 import * as order from "../public/shared/eoseong120.js";
 import * as notices from "../public/shared/notices.js";
+import * as more from "../public/shared/book-more.js";
+import * as disciples from "../public/shared/disciples.js";
 import * as videos from "../public/shared/videos.js";
 import worker from "../worker/index.js";
 
@@ -35,7 +37,7 @@ function app(mode, saved = {}, dark = false, search = "") {
     addEventListener: (type, fn) => { (events[type] ||= []).push(fn); },
   };
   const context = createContext({
-    ...bible, ...roadmaps, ...guide, ...flow, ...order, ...notices, ...videos, celebrate() {},
+    ...more, ...disciples, ...bible, ...roadmaps, ...guide, ...flow, ...order, ...notices, ...videos, celebrate() {},
     localStorage, document, navigator: { userAgent: "test", platform: "test", standalone: true },
     window: { matchMedia: query => query === "(prefers-color-scheme: dark)" ? media : { matches: false }, addEventListener() {}, scrollTo() {} },
     location: { search }, history: { replaceState() {} }, URLSearchParams,
@@ -101,6 +103,73 @@ for (const mode of ["group", "personal"]) {
     assert.doesNotMatch(a.screen.innerHTML, /class="plan-head"/);
     assert.equal(a.storage.get("dailyView"), "today");
     assert.equal(app(mode, Object.fromEntries(a.storage)).S.dailyView, "today");
+  });
+
+  test(`매일 (${mode}): 열린 매일만 재탭 토글하고 저장·재시작·다른 탭 진입은 유지`, async () => {
+    const a = app(mode);
+    for (const expected of ["plan", "today", "plan"]) {
+      await a.click("tab", { tab: "today" });
+      assert.equal(a.S.dailyView, expected);
+      assert.equal(a.storage.get("dailyView"), expected);
+      assert.equal(app(mode, Object.fromEntries(a.storage)).S.dailyView, expected);
+      assert.match(a.screen.innerHTML, new RegExp(`data-view="${expected}" aria-current="page"`));
+    }
+    for (const view of ["today", "plan"]) {
+      await a.click("daily-view", { view });
+      await a.click("tab", { tab: "guide" });
+      await a.click("tab", { tab: "today" });
+      assert.equal(a.S.dailyView, view);
+      assert.equal(a.storage.get("dailyView"), view);
+    }
+    // 열린 길잡이를 다시 누르면 시대 흐름 → 66권 배경 → 인물 정보 → 시대 흐름 순서로 돈다.
+    await a.click("tab", { tab: "guide" });
+    const start = a.S.guideTab;
+    const order = ["flow", "books", "people"];
+    for (let i = 1; i <= 3; i++) {
+      await a.click("tab", { tab: "guide" });
+      const expected = order[(order.indexOf(start) + i) % 3];
+      assert.equal(a.S.guideTab, expected);
+      assert.equal(a.storage.get("guideTab"), expected);
+      assert.match(a.screen.innerHTML, new RegExp(`data-guide-tab="${expected}" aria-current="page"`));
+    }
+  });
+
+  test(`길잡이 (${mode}): 폴더 3개·전환·저장·구버전 키 격리·재탭 순환`, async () => {
+    for (const saved of [{ guideView: "books" }, { guideTab: "invalid" }]) assert.equal(app(mode, saved).S.guideTab, "flow");
+    const a = app(mode, { tab: "guide", guideView: "order" });
+    for (const tab of ["flow", "books", "people"]) {
+      await a.click("guide-tab", { guideTab: tab });
+      const html = a.screen.innerHTML;
+      assert.deepEqual([...html.matchAll(/data-guide-tab="([^"]+)"/g)].map(m => m[1]), ["flow", "books", "people"]);
+      for (const label of ["시대 흐름", "66권 배경", "인물 정보"]) assert.ok(html.includes(label));
+      assert.match(html, new RegExp(`data-guide-tab="${tab}" aria-current="page"`));
+      assert.match(html, /class="daily-folders guide-folders"/);
+      assert.equal(a.S.guideTab, tab);
+      assert.equal(a.storage.get("guideTab"), tab);
+      assert.equal(a.storage.get("guideView"), "order");
+      const next = app(mode, Object.fromEntries(a.storage));
+      assert.equal(next.S.guideTab, tab);
+      next.evaluate("render()");
+      assert.equal(next.screen.innerHTML, html);
+      assert.equal(html.includes('class="gorder-timeline"'), tab === "flow");
+      assert.equal((html.match(/class="gbook"/g) || []).length, tab === "books" ? 66 : 0);
+      assert.equal((html.match(/class="disciple-card"/g) || []).length, tab === "people" ? 12 : 0);
+      assert.equal((html.match(/class="same-name-card"/g) || []).length, tab === "people" ? 6 : 0);
+      assert.equal(html.includes("연대와 저자는 한국 교회에서 일반적인 전통적 견해를 따랐어요."), tab !== "people");
+      assert.doesNotMatch(html, /guide-books|guide-resources|guide-disciples|66권 찾기|참고 자료/);
+      if (tab === "books") assert.ok(html.includes("책을 누르면 시대·저자·당시 상황 같은 배경을 볼 수 있어요."));
+      // 열린 길잡이를 다시 누르면 다음 폴더로 돈다(운영자 요청). 원래 폴더로 되돌려 다음 확인을 이어 간다.
+      await a.click("tab", { tab: "guide" });
+      assert.equal(a.S.guideTab, ["flow", "books", "people"][(["flow", "books", "people"].indexOf(tab) + 1) % 3]);
+      await a.click("guide-tab", { guideTab: tab });
+      assert.equal(a.screen.innerHTML, html);
+      await a.click("tab", { tab: "today" });
+      await a.click("tab", { tab: "guide" });
+      assert.equal(a.S.guideTab, tab);
+    }
+    await a.click("guide-tab", { guideTab: "invalid" });
+    assert.equal(a.S.guideTab, "people");
+    assert.equal(a.storage.get("guideTab"), "people");
   });
 
   test(`매일 (${mode}): 예전 plan 버튼·저장값과 새 dailyView 복원`, async () => {
@@ -208,7 +277,7 @@ test("서비스워커 v54: 알림 작은 배지는 badge-96·앱 아이콘 유�
   let pending;
   handlers.install({ waitUntil: p => { pending = p; } });
   await pending;
-  assert.equal(shells[0].name, "malsseum-v55");
+  assert.equal(shells[0].name, "malsseum-v57");
   assert.ok(shells[0].paths.includes("/icons/badge-96.png"));
   handlers.push({ data: { json: () => ({ title: "오늘", url: "/?tab=today" }) }, waitUntil: p => { pending = p; } });
   await pending;
@@ -268,8 +337,13 @@ for (const mode of ["group", "personal"]) {
     assert.equal((a.screen.innerHTML.match(/data-action="today-flow"/g) || []).length, 1);
     assert.match(a.screen.innerHTML, /class="book-info">[\s\S]*data-action="book-guide"[\s\S]*class="link-btn guide-flow-link"/);
     assert.match(a.screen.innerHTML, /aria-hidden="true">[\s\S]*시대 흐름 보기/);
+    a.S.guideTab = "people";
+    a.storage.set("guideTab", "people");
     const dom = flowDom(a);
     await a.click("today-flow");
+    assert.equal(a.S.guideTab, "flow");
+    assert.equal(a.storage.get("guideTab"), "flow");
+    assert.match(a.screen.innerHTML, /data-guide-tab="flow" aria-current="page"/);
     assert.equal(a.S.tab, "guide");
     assert.equal(a.storage.get("tab"), "guide");
     assert.deepEqual(dom.eras.flatMap((e, i) => e.fold.open ? [i] : []), [8]);
@@ -296,8 +370,13 @@ for (const mode of ["group", "personal"]) {
     a.S.plan = [{ day: 1, chapters: [["창세기", 5], ["시편", 34]] }];
     a.S.today = a.S.startDate;
     runInContext('window.matchMedia = () => ({ matches: true })', a.context);
+    a.S.guideTab = "people";
+    a.storage.set("guideTab", "people");
     const dom = flowDom(a);
     await a.click("today-flow");
+    assert.equal(a.S.guideTab, "flow");
+    assert.equal(a.storage.get("guideTab"), "flow");
+    assert.match(a.screen.innerHTML, /data-guide-tab="flow" aria-current="page"/);
     a.frames.shift()(); a.frames.shift()();
     assert.deepEqual(a.jumps, [{ behavior: "auto", block: "center" }]);
     assert.ok(dom.eras[0].rows[0].refs[0].classes.has("gorder-highlight"));
@@ -311,8 +390,13 @@ for (const mode of ["group", "personal"]) {
     a.nodes.set("#toast", toast);
     a.S.plan = [{ day: 1, chapters: [["없는 책", 1]] }];
     a.S.today = a.S.startDate;
+    a.S.guideTab = "people";
+    a.storage.set("guideTab", "people");
     const dom = flowDom(a);
     await a.click("today-flow");
+    assert.equal(a.S.guideTab, "flow");
+    assert.equal(a.storage.get("guideTab"), "flow");
+    assert.match(a.screen.innerHTML, /data-guide-tab="flow" aria-current="page"/);
     assert.equal(a.S.tab, "guide");
     assert.equal(toast.textContent, "이 본문은 시간 순서표에서 찾지 못했어요");
     assert.equal(a.frames.length, 0);

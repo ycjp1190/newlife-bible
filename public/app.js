@@ -1,9 +1,11 @@
 // "말씀 읽고 새 인생" 앱 화면
 import {
   chapterKey, dateOfDaySched, dayOnDate, EVERY_DAY, flowDay, formatChapters, isDayDone, itemLabel, kstToday, maskCount,
-  MIN_READ_DAYS, parseChapters, streakDays, validMask, weekdaysText,
+  MIN_READ_DAYS, parseChapters, resolveBook, streakDays, validMask, weekdaysText,
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
+import { BOOK_MORE } from "./shared/book-more.js";
+import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES } from "./shared/disciples.js";
 import { guideMatches } from "./shared/guide-flow.js";
 import { BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS } from "./shared/guide.js";
 import { abbrBook, chronoTimeline, fullRef } from "./shared/eoseong120.js";
@@ -26,6 +28,7 @@ const S = {
   token: store.get("token"),
   me: null, plan: [], startDate: null, today: kstToday(), checks: new Map(),
   vapid: null, loaded: false, tab: store.get("tab") || "today", planJump: true,
+  guideTab: ["flow", "books", "people"].includes(store.get("guideTab")) ? store.get("guideTab") : "flow",
   dailyView: store.get("dailyView") === "plan" ? "plan" : "today",
   theme: ["light", "dark"].includes(store.get("theme")) ? store.get("theme") : "auto",
   mode: store.get("mode") || "group", joinView: "new",
@@ -1228,14 +1231,20 @@ function renderGuide() {
         </li>`;
       }).join("")}</ol>`;
   $("#app").innerHTML = `
-    <header class="top"><h1>성경 길잡이</h1><button class="btn secondary guide-find" type="button" data-action="guide-books">66권 찾기</button></header>
-    ${body}
-    <p class="hint mt">연대와 저자는 한국 교회에서 일반적인 전통적 견해를 따랐어요.</p>
+    <header class="top"><h1>성경 길잡이</h1></header>
+    <nav class="daily-folders guide-folders" aria-label="길잡이 보기">${[["flow", "시대 흐름"], ["books", "66권 배경"], ["people", "인물 정보"]].map(([tab, label]) =>
+      `<button type="button" data-action="guide-tab" data-guide-tab="${tab}" ${(S.guideTab || "flow") === tab ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav>
+    <section class="daily-panel guide-panel" aria-label="${S.guideTab === "books" ? "66권 배경" : S.guideTab === "people" ? "인물 정보" : "시대 흐름"}">
+      ${S.guideTab === "books" ? guideBooksHtml() : S.guideTab === "people" ? disciplesHtml() : body}
+      <p class="hint mt">${S.guideTab === "people" ? "표시: 성경·전통·일반적 견해·뜻풀이를 구분했어요." : "연대와 저자는 한국 교회에서 일반적인 전통적 견해를 따랐어요."}</p>
+    </section>
     ${navHtml()}`;
 }
 
 function openTodayFlow() {
   const matches = guideMatches(dayPlan(todayDay()).chapters, orderEras());
+  S.guideTab = "flow";
+  store.set("guideTab", S.guideTab);
   selectTab("guide");
   window.scrollTo(0, 0);
   render();
@@ -1275,15 +1284,39 @@ function openTodayFlow() {
   }));
 }
 
-function openGuideBooks() {
-  openSheet(`<h3>66권 찾기</h3>${["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
+function guideBooksHtml() {
+  return `<p class="hint">책을 누르면 시대·저자·당시 상황 같은 배경을 볼 수 있어요.</p>${["구약", "신약"].map((t) => `<h2 class="section">${t} <small>${t === "구약" ? 39 : 27}권</small></h2>
     <div class="card">${BOOK_GROUPS.filter(([g]) => g === t).map(([, title, books]) => `<h3 class="ggroup-t">${esc(title)} <small>${books.length}권</small></h3>
-      <div class="gbooks">${books.map((b) => `<button class="gbook" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(b)}</button>`).join("")}</div>`).join("")}</div>`).join("")}
-    <button class="btn secondary block mt" data-action="close-sheet">닫기</button>`);
+      <div class="gbooks">${books.map((b) => `<button class="gbook" type="button" data-action="book-guide" data-book="${esc(b)}">${esc(b)}</button>`).join("")}</div>`).join("")}</div>`).join("")}`;
+}
+
+function guideTag(tag) {
+  const kind = { 성경: "bible", 전통: "tradition", "일반적 견해": "common", 뜻풀이: "meaning" }[tag];
+  return kind ? `<span class="guide-tag ${kind}">${esc(tag)}</span>` : "";
+}
+
+function disciplesHtml() {
+  const refs = (text) => text ? `<small class="disciple-refs">${esc(text)}</small>` : "";
+  const items = (rows) => `<ul class="g-tips">${rows.map((r) => `<li>${r.name ? `<b>${esc(r.name)}</b> · ` : ""}${esc(r.text)} ${refs(r.refs)} ${guideTag(r.tag)}</li>`).join("")}</ul>`;
+  return `<section class="disciples-guide" aria-labelledby="disciples-title"><h2 id="disciples-title">열두 제자 이름 정리</h2>
+    <p class="disciples-lists">${esc(DISCIPLES_INTRO.lists)}</p><p>${esc(DISCIPLES_INTRO.tip)}</p>
+    <p class="guide-legend">${Object.entries(TAGS).map(([tag, text]) => `<span>${guideTag(tag)} ${esc(text)}</span>`).join(" ")}</p>
+    ${DISCIPLES.map((d, i) => `<details class="disciple-card"><summary><span class="disciple-number">${i + 1}</span><span><b>${esc(d.name)}</b><small class="disciple-english">${esc(d.english)}</small></span></summary><div class="disciple-body">
+      ${d.names.length ? `<h4>다른 이름</h4>${items(d.names)}` : ""}<h4>알아 둘 점</h4>${items(d.facts)}
+    </div></details>`).join("")}
+    <h4 class="same-names-title">헷갈리는 같은 이름</h4>
+    ${SAME_NAMES.map((g) => `<details class="same-name-card"><summary><b>${esc(g.name)}</b></summary><ul class="g-tips">${g.people.map((p) => `<li>${esc(p.who)} ${refs(p.refs)}</li>`).join("")}</ul></details>`).join("")}
+    </section>`;
+}
+
+function bookConnectRef(ref) {
+  const book = abbrBook(ref) || resolveBook(String(ref).trim().split(/\s+/)[0]);
+  return book && BOOK_GUIDE[book] ? `<button class="book-connect-ref" type="button" data-action="book-guide" data-book="${esc(book)}"><b>${esc(ref)}</b></button>` : `<b>${esc(ref)}</b>`;
 }
 
 function openBookGuide(name) {
   const g = BOOK_GUIDE[name];
+  const more = BOOK_MORE[name];
   if (!g) return;
   const timeline = orderEras();
   const eras = [...new Set((g.eras || []).map((t) => t === "욥기" ? "시작과 족장" : t))];
@@ -1291,9 +1324,17 @@ function openBookGuide(name) {
   const row = (label, text) => (text ? `<div class="g-row"><dt>${label}</dt><dd>${esc(text)}</dd></div>` : "");
   openSheet(`<div class="book-guide">
     <h3>${esc(name)}</h3>
+    ${more ? `<p class="book-one-line">${esc(more.oneLine)}</p>` : ""}
     ${eras.length ? `<p class="guide-people">${eras.map((t) => `<span class="chip">${String(eraNo(t)).padStart(2, "0")} · ${esc(t)}</span>`).join(" ")}</p>` : ""}
     <dl>${row("시대", g.years)}${row("저자", g.author)}${row("독자와 배경", g.audience)}${row("핵심 메시지", g.message)}</dl>
     ${g.tips?.length ? `<h4>알아 두면 좋아요</h4><ul class="g-tips">${g.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+    ${more ? `<details class="book-more"><summary>더 알아보기</summary>
+      <dl>${row("당시 상황", more.setting)}</dl>
+      <h4>책의 흐름</h4><ul class="g-tips">${more.flow.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      <h4>함께 볼 본문</h4><ul class="g-tips">${more.connect.map(({ ref, why }) => `<li>${bookConnectRef(ref)} · ${esc(why)}</li>`).join("")}</ul>
+      <h4>읽으며 생각할 질문</h4><ul class="g-tips">${(Array.isArray(more.question) ? more.question : [more.question]).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      ${more.views ? `<div class="book-views"><h4>견해 차이</h4><p>${esc(more.views)}</p></div>` : ""}
+    </details>` : ""}
     <button class="btn secondary block mt" data-action="close-sheet">닫기</button>
   </div>`);
 }
@@ -1840,7 +1881,14 @@ document.addEventListener("click", async (ev) => {
   const a = el.dataset.action;
   if (a === "toggle") toggleCheck(el);
   else if (a === "tab") {
-    selectTab(el.dataset.tab);
+    const repeatDaily = el.dataset.tab === "today" && S.tab === "today";
+    // 이미 열린 길잡이를 다시 누르면 시대 흐름 → 66권 배경 → 인물 정보 순서로 돈다.
+    if (el.dataset.tab === "guide" && S.tab === "guide") {
+      const order = ["flow", "books", "people"];
+      S.guideTab = order[(order.indexOf(S.guideTab || "flow") + 1) % order.length];
+      store.set("guideTab", S.guideTab);
+    }
+    selectTab(el.dataset.tab, repeatDaily ? (S.dailyView === "today" ? "plan" : "today") : undefined);
     window.scrollTo(0, 0);
     render();
     if (S.tab === "together") loadMembers();
@@ -1848,6 +1896,12 @@ document.addEventListener("click", async (ev) => {
     if (S.tab === "chat" && !store.get("lpHint")) { store.set("lpHint", "1"); toast("말풍선을 길게 누르면 공감·복사·수정·삭제를 할 수 있어요"); }
   } else if (a === "daily-view") {
     selectTab("today", el.dataset.view);
+    window.scrollTo(0, 0);
+    render();
+  } else if (a === "guide-tab") {
+    if (!["flow", "books", "people"].includes(el.dataset.guideTab)) return;
+    S.guideTab = el.dataset.guideTab;
+    store.set("guideTab", S.guideTab);
     window.scrollTo(0, 0);
     render();
   } else if (a === "theme") {
@@ -1860,7 +1914,6 @@ document.addEventListener("click", async (ev) => {
   else if (a === "open-day") openDay(Number(el.dataset.day));
   else if (a === "close-sheet") closeSheet();
   else if (a === "jump-today") jumpToday();
-  else if (a === "guide-books") openGuideBooks();
   else if (a === "today-flow") openTodayFlow();
   else if (a === "book-guide") openBookGuide(el.dataset.book);
   else if (a === "bulk-edit") openBulkEdit();

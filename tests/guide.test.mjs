@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { BOOK_NAMES } from "../public/shared/bible.js";
+import { BOOK_MORE } from "../public/shared/book-more.js";
+import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES } from "../public/shared/disciples.js";
+import { BOOK_NAMES, resolveBook } from "../public/shared/bible.js";
 import { EOSEONG } from "../public/shared/eoseong.js";
 import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS, CHRONO_PARTS } from "../public/shared/guide.js";
 import { abbrBook, BOOK_ABBR, chronoOrder, chronoTimeline, EOSEONG120, fullRef } from "../public/shared/eoseong120.js";
@@ -218,13 +220,13 @@ test("시간 순서 화면은 11시대 접는 타임라인·왼쪽 연대·항�
     runInNewContext(`${guide}\nrenderGuide(); openBookGuide(abbrBook("(눅 3:23b~38)"));`, {
       S: { mode }, store: { get: () => "order" }, $: () => app,
       esc: (value) => String(value), navHtml: () => "", openSheet: (html) => { sheet = html; },
-      CANON, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, chronoTimeline, fullRef,
+      CANON, BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
     });
     assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 연대는 대략이에요. 시대를 누르면 요약과 읽는 순서가 펼쳐져요. 굵은 줄은 큰 줄기, '함께 읽기'는 그 시기에 함께 읽는 본문이에요. 본문이나 책을 누르면 책 배경이 나와요."));
     assert.doesNotMatch(app.innerHTML, /DAY|120일|gorder-chip|gorder-items|괄호 표기|›/);
     assert.match(app.innerHTML, /<ol class="gorder-timeline">/);
     assert.doesNotMatch(source, /guideView|guide-view|guide-views/);
-    assert.match(app.innerHTML, /class="btn secondary guide-find"[^>]*data-action="guide-books">66권 찾기<\/button>/);
+    assert.doesNotMatch(app.innerHTML, /guide-books|guide-resources|guide-disciples|66권 찾기|참고 자료/);
     assert.ok(!app.innerHTML.includes(ERAS.find(e => e.title === "욥기").summary));
     for (const group of ERAS.flatMap(e => e.groups || [])) {
       assert.ok(!app.innerHTML.includes(group.summary));
@@ -351,27 +353,30 @@ test("66권 분류와 '교회' 구간 묶음이 빠짐·겹침 없이 맞다", a
 });
 
 
-test("66권 찾기 창은 두 모드에서 구약·신약 분류 66권을 표시하고 책 배경 창으로 바뀐다", async () => {
+test("66권 배경 본문은 두 모드에서 구약·신약 분류 66권을 표시하고 책 배경 창을 연다", async () => {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const guide = source.slice(source.indexOf("const GORDER_COLORS ="), source.indexOf("// ── 화면: 설정"));
   const clickSource = source.slice(source.lastIndexOf('document.addEventListener("click"'), source.indexOf('document.addEventListener("change"'));
   for (const mode of ["group", "personal"]) {
     let sheet, click;
+    const app = { innerHTML: "" };
     const context = {
+      $: () => app, navHtml: () => "", store: { set() {} }, window: { scrollTo() {} }, render: () => runInNewContext("renderGuide()", context),
       S: { mode }, esc: (value) => String(value),
       openSheet: (html) => { sheet = html; },
       document: { addEventListener: (type, fn) => { if (type === "click") click = fn; } },
-      BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, chronoTimeline, fullRef,
+      BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
     };
     runInNewContext(`${guide}\n${clickSource}`, context);
     const press = async (dataset) => click({ target: { closest: () => ({ dataset }) } });
-    await press({ action: "guide-books" });
-    assert.match(sheet, /구약 <small>39권<\/small>/);
-    assert.match(sheet, /신약 <small>27권<\/small>/);
+    await press({ action: "guide-tab", guideTab: "books" });
+    const booksHtml = app.innerHTML;
+    assert.match(booksHtml, /구약 <small>39권<\/small>/);
+    assert.match(booksHtml, /신약 <small>27권<\/small>/);
     for (const [, title, books] of BOOK_GROUPS) {
-      assert.ok(sheet.includes(`<h3 class="ggroup-t">${title} <small>${books.length}권</small></h3>`));
+      assert.ok(booksHtml.includes(`<h3 class="ggroup-t">${title} <small>${books.length}권</small></h3>`));
     }
-    const books = [...sheet.matchAll(/data-action="book-guide" data-book="([^"]+)">([^<]+)<\/button>/g)];
+    const books = [...booksHtml.matchAll(/data-action="book-guide" data-book="([^"]+)">([^<]+)<\/button>/g)];
     assert.equal(books.length, 66);
     assert.deepEqual(books.map(m => m[1]), BOOK_GROUPS.flatMap(([, , names]) => names));
     assert.deepEqual(books.map(m => m[2]).sort(), [...CANON].sort());
