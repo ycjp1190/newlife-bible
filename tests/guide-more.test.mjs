@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { resolveBook } from "../public/shared/bible.js";
 import { BOOK_MORE } from "../public/shared/book-more.js";
-import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES } from "../public/shared/disciples.js";
+import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, AFTER_ASCENSION } from "../public/shared/disciples.js";
 import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS, CHRONO_PARTS } from "../public/shared/guide.js";
 import { abbrBook, chronoTimeline, fullRef } from "../public/shared/eoseong120.js";
 
@@ -16,7 +16,7 @@ function screen(mode) {
   const root = { innerHTML: "" }, app = { innerHTML: "" };
   let click;
   const context = {
-    S: { mode, guideTab: "flow" }, store: { set() {} }, window: { scrollTo() {} }, render: () => runInNewContext("renderGuide()", context), esc, BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES,
+    S: { mode, guideTab: "flow" }, store: { set() {} }, window: { scrollTo() {} }, render: () => runInNewContext("renderGuide()", context), esc, BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, AFTER_ASCENSION,
     BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
     $: sel => sel === "#app" ? app : root, navHtml: () => "",
     document: { addEventListener: (type, fn) => { if (type === "click") click = fn; } },
@@ -96,6 +96,12 @@ for (const mode of ["group", "personal"]) {
       }
     }
     assert.equal((html.match(/<h4>다른 이름<\/h4>/g) || []).length, DISCIPLES.filter(d => d.names.length).length);
+    // 승천 이후 단락과 사도마다 '마지막'(성경·전통·후대 전승 구분)
+    assert.match(html, /<h4 class="after-ascension-title">예수님 승천 이후<\/h4>/);
+    assert.equal((html.match(/<details class="disciple-card after-card">/g) || []).length, AFTER_ASCENSION.length);
+    for (const g of AFTER_ASCENSION) { assert.ok(html.includes(esc(g.title))); for (const p of g.points) assert.ok(html.includes(esc(p.text))); }
+    assert.equal((html.match(/<h4>마지막<\/h4>/g) || []).length, DISCIPLES.filter(d => d.end?.length).length);
+    assert.ok(html.includes('class="guide-tag late"'));
     for (const group of SAME_NAMES) for (const p of group.people) assert.ok(html.includes(`${esc(p.who)} <small class="disciple-refs">${esc(p.refs)}</small>`));
     await s.press({ action: "book-guide", book: "마태복음" });
     assert.match(s.root.innerHTML, /role="dialog"/);
@@ -117,6 +123,6 @@ test("시트 내부 스크롤·휴대폰 버튼·oneLine·태그 스타일과 �
   runInNewContext(sw, { self: { addEventListener(type, fn) { if (type === "install") install = fn; }, skipWaiting() {} }, caches: { open: async name => { cache = name; return { addAll: async shell => { paths = shell; } }; } } });
   install({ waitUntil: p => { pending = p; } });
   await pending;
-  assert.equal(cache, "malsseum-v58");
+  assert.equal(cache, "malsseum-v59");
   for (const path of ["/shared/book-more.js", "/shared/disciples.js"]) assert.ok(paths.includes(path));
 });

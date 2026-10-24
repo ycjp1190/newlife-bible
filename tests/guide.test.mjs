@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { BOOK_MORE } from "../public/shared/book-more.js";
-import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES } from "../public/shared/disciples.js";
+import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, AFTER_ASCENSION } from "../public/shared/disciples.js";
 import { BOOK_NAMES, resolveBook } from "../public/shared/bible.js";
 import { EOSEONG } from "../public/shared/eoseong.js";
 import { BOOK_GROUPS, BOOK_GUIDE, CANON, ERAS, CHRONO_PARTS } from "../public/shared/guide.js";
@@ -220,7 +220,7 @@ test("시간 순서 화면은 11시대 접는 타임라인·왼쪽 연대·항�
     runInNewContext(`${guide}\nrenderGuide(); openBookGuide(abbrBook("(눅 3:23b~38)"));`, {
       S: { mode }, store: { get: () => "order" }, $: () => app,
       esc: (value) => String(value), navHtml: () => "", openSheet: (html) => { sheet = html; },
-      CANON, BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
+      CANON, BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, AFTER_ASCENSION, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
     });
     assert.ok(app.innerHTML.includes("「어성경 핸드북」의 시간 순서예요. 연대는 대략이에요. 시대를 누르면 요약과 읽는 순서가 펼쳐져요. 굵은 줄은 큰 줄기, '함께 읽기'는 그 시기에 함께 읽는 본문이에요. 본문이나 책을 누르면 책 배경이 나와요."));
     assert.doesNotMatch(app.innerHTML, /DAY|120일|gorder-chip|gorder-items|괄호 표기|›/);
@@ -365,7 +365,7 @@ test("66권 배경 본문은 두 모드에서 구약·신약 분류 66권을 표
       S: { mode }, esc: (value) => String(value),
       openSheet: (html) => { sheet = html; },
       document: { addEventListener: (type, fn) => { if (type === "click") click = fn; } },
-      BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
+      BOOK_MORE, TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, AFTER_ASCENSION, BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS, abbrBook, resolveBook, chronoTimeline, fullRef,
     };
     runInNewContext(`${guide}\n${clickSource}`, context);
     const press = async (dataset) => click({ target: { closest: () => ({ dataset }) } });

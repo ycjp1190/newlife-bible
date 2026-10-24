@@ -432,6 +432,14 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .gorder-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
 .gorder-count { display: block; font-size: 12px; color: var(--muted); }
 .gorder-body { padding: 0 10px 10px; }
+/* 말풍선을 펼치면 제목은 그대로 두고, 내용만 왼쪽 연대 열·세로 띠 자리까지 넓힌다(좁은 휴대폰 화면용).
+   106px = 연대 열 60 + 간격 8 + 띠·번호 30 + 간격 8. 테두리 1.5px 만큼 더 당겨 바깥선을 맞춘다. */
+.gorder-fold[open] > .gorder-body {
+  position: relative; z-index: 2; margin: 0 -1.5px -1.5px calc(-106px - 1.5px); padding: 12px 12px 12px;
+  border: 1.5px solid var(--line); border-color: color-mix(in srgb, var(--c) 35%, var(--line)); border-top: 0;
+  border-radius: 0 0 16px 16px; background: var(--card); background: color-mix(in srgb, var(--c) 9%, var(--bg));
+}
+.gorder-fold[open] { border-bottom-left-radius: 0; }
 .gorder-row + .gorder-row { margin-top: 2px; }
 .gorder-main { position: relative; padding-left: 14px; font-size: 16px; font-weight: 600; }
 .gorder-main::before { content: ""; position: absolute; left: 0; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
@@ -494,6 +502,8 @@ button, .rx-big, .rx-big *, .msg-actions, .rx-row { -webkit-user-select: none; u
 .guide-tag.tradition { background: var(--gold-soft); color: var(--gold); }
 .guide-tag.common { border-color: var(--line); color: var(--muted); }
 .guide-tag.meaning { border: 1px dashed var(--line); color: var(--muted); }
+.guide-tag.late { border: 1px dashed var(--gold); color: var(--gold); }
+.after-ascension-title { margin: 18px 0 2px; font-size: 15px; color: var(--accent); }
 .disciple-card, .same-name-card { border-top: 1px solid var(--line); }
 .disciple-card > summary { display: flex; gap: 9px; align-items: baseline; }
 .disciple-number { min-width: 18px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }

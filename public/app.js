@@ -5,7 +5,7 @@ import {
 } from "./shared/bible.js";
 import { chapterVideo } from "./shared/videos.js";
 import { BOOK_MORE } from "./shared/book-more.js";
-import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES } from "./shared/disciples.js";
+import { TAGS, DISCIPLES_INTRO, DISCIPLES, SAME_NAMES, AFTER_ASCENSION } from "./shared/disciples.js";
 import { guideMatches } from "./shared/guide-flow.js";
 import { BOOK_GROUPS, BOOK_GUIDE, ERAS, CHRONO_PARTS } from "./shared/guide.js";
 import { abbrBook, chronoTimeline, fullRef } from "./shared/eoseong120.js";
@@ -1291,7 +1291,7 @@ function guideBooksHtml() {
 }
 
 function guideTag(tag) {
-  const kind = { 성경: "bible", 전통: "tradition", "일반적 견해": "common", 뜻풀이: "meaning" }[tag];
+  const kind = { 성경: "bible", 전통: "tradition", "일반적 견해": "common", 뜻풀이: "meaning", "후대 전승": "late" }[tag];
   return kind ? `<span class="guide-tag ${kind}">${esc(tag)}</span>` : "";
 }
 
@@ -1305,7 +1305,10 @@ function disciplesHtml() {
     ${folder("열두 제자", "같은 이름이 많아 헷갈리는 제자들을 정리했어요", `<p class="disciples-lists">${esc(DISCIPLES_INTRO.lists)}</p><p>${esc(DISCIPLES_INTRO.tip)}</p>
     ${DISCIPLES.map((d, i) => `<details class="disciple-card"><summary><span class="disciple-number">${i + 1}</span><span><b>${esc(d.name)}</b><small class="disciple-english">${esc(d.english)}</small></span></summary><div class="disciple-body">
       ${d.names.length ? `<h4>다른 이름</h4>${items(d.names)}` : ""}<h4>알아 둘 점</h4>${items(d.facts)}
-    </div></details>`).join("")}`)}
+      ${d.end?.length ? `<h4>마지막</h4>${items(d.end)}` : ""}
+    </div></details>`).join("")}
+    <h4 class="after-ascension-title">예수님 승천 이후</h4>
+    ${AFTER_ASCENSION.map((g) => `<details class="disciple-card after-card"><summary><span><b>${esc(g.title)}</b></span></summary><div class="disciple-body">${items(g.points)}</div></details>`).join("")}`)}
     ${folder("헷갈리는 같은 이름", "시몬·야고보·유다·요한·빌립·마리아", SAME_NAMES.map((g) => `<details class="same-name-card"><summary><b>${esc(g.name)}</b></summary><ul class="g-tips">${g.people.map((p) => `<li>${esc(p.who)} ${refs(p.refs)}</li>`).join("")}</ul></details>`).join(""))}
     </section>`;
 }

@@ -277,7 +277,7 @@ test("서비스워커 v54: 알림 작은 배지는 badge-96·앱 아이콘 유�
   let pending;
   handlers.install({ waitUntil: p => { pending = p; } });
   await pending;
-  assert.equal(shells[0].name, "malsseum-v58");
+  assert.equal(shells[0].name, "malsseum-v59");
   assert.ok(shells[0].paths.includes("/icons/badge-96.png"));
   handlers.push({ data: { json: () => ({ title: "오늘", url: "/?tab=today" }) }, waitUntil: p => { pending = p; } });
   await pending;
